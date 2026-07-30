@@ -18,6 +18,7 @@ SHELL_CONTROL_CHARACTERS = frozenset(";&|`$()<>\n\r")
 
 class ApprovalOutcome(Protocol):
     def allow(self) -> None: ...
+    def escalate(self) -> None: ...
 
 
 class SafeCommandRules:
@@ -34,6 +35,8 @@ class SafeCommandRules:
             if words[: len(prefix)] == list(prefix):
                 outcome.allow()
                 return
+
+        outcome.escalate()
 
     def _shell_command(self, action: JSONDict) -> str:
         command = action.get("command")

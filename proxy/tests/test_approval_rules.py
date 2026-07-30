@@ -29,6 +29,15 @@ def test_safe_command_prefix_is_allowed() -> None:
     assert outcome.verdict == "allow"
 
 
+def test_unknown_command_is_escalated() -> None:
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "npm publish"]}
+
+    SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
+
+    assert outcome.verdict == "escalate"
+
+
 @pytest.mark.parametrize(
     "shell_command",
     [
