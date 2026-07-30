@@ -63,6 +63,7 @@ def _litellm_executable() -> str:
         "litellm",
         search_path=shutil.which,
         interpreter=sys.executable,
+        exists=os.path.exists,
         override=os.environ.get("LITELLM_EXECUTABLE"),
     )
 
