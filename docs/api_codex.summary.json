@@ -2,7 +2,14 @@
   "_meta": {
     "source": "capture réelle 2026-07-30, 94 requêtes POST /v1/responses (93 main + 1 auto-review)",
     "detail_doc": "docs/API_CODEX.md",
-    "gap": "réponses SSE non capturées — format de réponse à documenter"
+    "gap": "aucun — format de réponse établi depuis la source Codex (codex-rs/codex-api/src/sse/responses.rs)"
+  },
+  "response_sse": {
+    "events": ["response.created", "response.output_item.added", "response.output_item.done", "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done", "response.reasoning_summary_part.added", "response.custom_tool_call_input.delta", "response.failed", "response.incomplete", "response.completed"],
+    "obligatoire": "response.completed uniquement — son absence = erreur fatale 'stream closed before response.completed'; les delta ne servent qu'à l'affichage",
+    "minimum_viable": "response.created + response.output_item.done (item message/output_text portant le JSON du verdict) + response.completed",
+    "champs": {"output_item.*": "item→ResponseItem", "*.delta": "delta + content_index|summary_index", "failed": "response.error{code,message,plan_type,resets_at}", "incomplete": "response.incomplete_details.reason", "completed": "response{id,usage,end_turn}"},
+    "piege": "Codex applique un idle timeout sur le flux : émettre sans attendre la fin du calcul local"
   },
   "endpoints": {
     "POST /v1/responses": "tout le trafic Codex (main + auto-review), stream=true store=false",

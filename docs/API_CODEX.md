@@ -2,9 +2,15 @@
 
 Documentation issue d'une capture réelle (2026-07-30, `/tmp/cerebras_proxy_debug.log`,
 23 Mo) : **94 requêtes** — 93 du modèle principal (`cerebras-gpt-oss-120b`) et
-**1 requête `codex-auto-review`** (le « Guardian »). Les réponses SSE n'ont pas
-été capturées dans cette session (le tee de réponse n'était pas actif) — la
-partie réponse reste à documenter lors d'une prochaine capture.
+**1 requête `codex-auto-review`** (le « Guardian »).
+
+Le log ne contient **aucune réponse** (0 ligne `data:` sur 94 requêtes) : le tee
+de `sanitizing_proxy.py` accumule tout le flux et n'écrit qu'à la toute fin, si
+bien qu'une déconnexion ou un abandon du générateur perd l'intégralité de la
+capture. Le format de réponse documenté en §6 ne vient donc pas d'une capture
+mais de la **source de Codex** (`codex-rs/codex-api/src/sse/responses.rs`,
+recoupée avec les chaînes du binaire installé) — ce qui est plus fiable, car
+c'est ce que Codex *accepte*, pas seulement ce qu'un serveur donné a émis.
 
 Résumé machine compact : `docs/api_codex.summary.json` (à préférer pour les
 agents LLM, ce fichier-ci est la référence détaillée).
@@ -155,7 +161,49 @@ Codex — si notre backend local est indisponible, laisser l'erreur remonter est
 acceptable (retour à l'approbation manuelle). **Ne jamais fabriquer un
 `allow` par défaut.**
 
-## 6. Implications d'implémentation pour le proxy
+## 6. Réponses : flux SSE attendu par Codex
+
+Source : `codex-rs/codex-api/src/sse/responses.rs` (fonction
+`process_responses_event`) + chaînes extraites du binaire `codex` 0.146.0.
+Chaque événement SSE est un objet JSON dont le champ `type` porte le nom
+ci-dessous.
+
+| Événement | Champs lus par Codex |
+|---|---|
+| `response.created` | vérifie seulement la présence de `response` |
+| `response.output_item.added` | `item` → `ResponseItem` |
+| `response.output_item.done` | `item` → `ResponseItem` |
+| `response.output_text.delta` | `delta`, `content_index` |
+| `response.reasoning_text.delta` | `delta`, `content_index` |
+| `response.reasoning_summary_text.delta` | `delta`, `summary_index` |
+| `response.reasoning_summary_text.done` | `item_id`, `text`, `summary_index` |
+| `response.reasoning_summary_part.added` | — |
+| `response.custom_tool_call_input.delta` | `delta`, `item_id`, `call_id` |
+| `response.failed` | `response.error` : `code`, `message`, `plan_type`, `resets_at` |
+| `response.incomplete` | `response.incomplete_details.reason` |
+| `response.completed` | `response` : `id`, `usage`, `end_turn` |
+
+**Règle dure : `response.completed` est obligatoire.** Si le flux se referme
+sans lui, Codex échoue avec `stream closed before response.completed` — erreur
+fatale, pas dégradation silencieuse. Tous les autres événements sont
+facultatifs : les `delta` ne servent qu'à l'affichage progressif.
+
+**Conséquence directe pour le Guardian local** : fabriquer une réponse valide
+ne demande que deux événements, le verdict étant porté par l'item de message.
+
+```
+data: {"type":"response.created","response":{"id":"resp_local_1"}}
+
+data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"outcome\":\"allow\"}"}]}}
+
+data: {"type":"response.completed","response":{"id":"resp_local_1","usage":{},"end_turn":true}}
+```
+
+Codex applique par ailleurs un **délai d'inactivité** sur le flux
+(`idle timeout waiting for SSE`) : une réponse locale doit commencer à émettre
+sans attendre la fin du calcul du modèle.
+
+## 7. Implications d'implémentation pour le proxy
 
 1. **Routage** : `model == "codex-auto-review"` est le seul discriminant
    nécessaire. Tout le reste de l'enveloppe est identique au trafic principal.
@@ -174,12 +222,11 @@ acceptable (retour à l'approbation manuelle). **Ne jamais fabriquer un
 5. **Champs à dropper localement** : `include` (encrypted_content),
    `client_metadata`, `prompt_cache_key`, `store` — même logique que
    `sanitize_body()` pour Cerebras.
-6. **Réponse SSE** : à fabriquer au format Responses API. Deux options :
-   passer par LiteLLM (bridge déjà existant, option A de `docs/DIRECTION.md`)
-   ou générer les événements SSE soi-même (option B — nécessite d'abord une
-   capture du format de réponse, non disponible à ce jour).
+6. **Réponse SSE** : le format est désormais connu (§6), donc la générer
+   nous-mêmes est possible sans dépendre de LiteLLM. Deux événements
+   suffisent, `response.completed` étant le seul obligatoire.
 
-## 7. Chiffres utiles pour P3 (compaction)
+## 8. Chiffres utiles pour P3 (compaction)
 
 - L'historique **complet** repart à chaque tour : 93 requêtes principales de la
   session totalisent 2 900 items `message` et 2 004 paires call/output.

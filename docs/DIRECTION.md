@@ -72,9 +72,10 @@ requête via un petit modèle local au lieu de la relayer vers Cerebras.
 1. **M1.1 — Capturer le contrat réel. ✅ FAIT (2026-07-30).** Le contrat
    complet est documenté dans `docs/API_CODEX.md` (détail) et
    `docs/api_codex.summary.json` (résumé machine — à lire en priorité par les
-   agents). Reste un trou : le **format de réponse SSE** n'a pas été capturé —
-   à compléter lors d'une prochaine session avec le tee de réponse actif
-   (`CEREBRAS_PROXY_DEBUG=1`, réponses loggées par `sanitizing_proxy.py`).
+   agents). Le **format de réponse SSE** est également établi (`API_CODEX.md`
+   §6), non par capture mais par lecture de la source de Codex : deux
+   événements suffisent à fabriquer une réponse valide, `response.completed`
+   étant le seul obligatoire. Plus aucune inconnue ne bloque M1.2.
 2. **M1.2 — Route dans le proxy avec réécriture du prompt (Option B
    imposée).** L'option « alias LiteLLM → ollama qui relaie la requête telle
    quelle » est **écartée** par les mesures de performance (voir encadré
