@@ -16,7 +16,9 @@ LiteLLM. Tout le reste (GET /v1/models, etc.) est simplement transmis.
 import asyncio
 import json
 import os
+import sys
 from collections.abc import AsyncGenerator, AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -27,13 +29,63 @@ from proxy.approval_rules import SafeCommandRules
 from proxy.custom_handler import sanitize_body
 from proxy.guardian import GUARDIAN_MODEL, compact_review_request, local_review
 from proxy.json_types import JSONValue
+from proxy.upstream_supervisor import StoppableProcess, UpstreamSupervisor
 
 LITELLM_UPSTREAM = "http://127.0.0.1:4001"
+LITELLM_CONFIG_PATH = Path(__file__).with_name("litellm_cerebras_config.yaml")
+LITELLM_STARTUP_TIMEOUT_SECONDS = 60
 DEBUG_LOG_PATH = "/tmp/cerebras_proxy_debug.log"
 DEBUG_ENABLED = os.environ.get("CEREBRAS_PROXY_DEBUG", "").lower() in ("1", "true", "yes")
 
-app = FastAPI()
 client = httpx.AsyncClient(timeout=None)
+
+
+def _report(message: str) -> None:
+    """`flush` explicite : hors terminal, le tampon est perdu au SIGTERM."""
+    print(f"[sanitizing_proxy] {message}", flush=True)
+
+
+async def _litellm_is_listening() -> bool:
+    try:
+        await client.get(f"{LITELLM_UPSTREAM}/health/liveliness", timeout=2.0)
+    except httpx.TransportError:
+        return False
+    return True
+
+
+def _litellm_executable() -> str:
+    """`litellm` est un script console : `python -m litellm` n'existe pas."""
+    return str(Path(sys.executable).with_name("litellm"))
+
+
+async def _spawn_litellm() -> StoppableProcess:
+    _report(f"LiteLLM absent, démarrage sur {LITELLM_UPSTREAM} ...")
+    return await asyncio.create_subprocess_exec(
+        _litellm_executable(), "--config", str(LITELLM_CONFIG_PATH), "--port", "4001"
+    )
+
+
+async def _await_litellm() -> None:
+    for _ in range(LITELLM_STARTUP_TIMEOUT_SECONDS):
+        if await _litellm_is_listening():
+            _report("LiteLLM prêt.")
+            return
+        await asyncio.sleep(1)
+    _report("LiteLLM n'a pas démarré à temps ; les requêtes répondront 502.")
+
+
+@asynccontextmanager
+async def _managed_upstream(app: FastAPI) -> AsyncGenerator[None, None]:
+    supervisor = UpstreamSupervisor(is_listening=_litellm_is_listening, spawn=_spawn_litellm)
+    await supervisor.ensure_available()
+    await _await_litellm()
+    try:
+        yield
+    finally:
+        await supervisor.release()
+
+
+app = FastAPI(lifespan=_managed_upstream)
 
 
 def _load_approval_rules() -> SafeCommandRules:
@@ -41,7 +93,7 @@ def _load_approval_rules() -> SafeCommandRules:
     try:
         config = json.loads(Path(__file__).with_name("approval_rules.json").read_text("utf-8"))
     except (OSError, ValueError) as exc:
-        print(f"[sanitizing_proxy] règles d'approbation illisibles, pré-filtre inactif : {exc}")
+        _report(f"règles d'approbation illisibles, pré-filtre inactif : {exc}")
         return SafeCommandRules(safe_prefixes=())
     if not isinstance(config, dict):
         return SafeCommandRules(safe_prefixes=())
@@ -54,7 +106,7 @@ APPROVAL_RULES = _load_approval_rules()
 def _unreachable_upstream(exc: httpx.TransportError) -> StreamingResponse:
     """Nomme le service en panne : Codex n'affiche qu'un « high demand » générique."""
     message = f"LiteLLM injoignable sur {LITELLM_UPSTREAM} : {exc}"
-    print(f"[sanitizing_proxy] {message}")
+    _report(message)
     return StreamingResponse(
         iter([json.dumps({"error": {"message": message, "type": "upstream_unreachable"}}).encode()]),
         status_code=502,
@@ -73,7 +125,7 @@ def _debug_log(label: str, data: JSONValue) -> None:
     try:
         _append_debug_log(f"\n===== {label} =====\n{json.dumps(data, indent=2, ensure_ascii=False)}\n")
     except (OSError, TypeError, ValueError) as exc:
-        print(f"[sanitizing_proxy] échec écriture debug log: {exc}")
+        _report(f"échec écriture debug log: {exc}")
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
@@ -108,7 +160,7 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
             _debug_log("APRES sanitize_body", data)
             body = json.dumps(data).encode()
         except (ValueError, TypeError, KeyError) as exc:
-            print(f"[sanitizing_proxy] échec du parsing/assainissement, requête transmise telle quelle: {exc}")
+            _report(f"échec du parsing/assainissement, requête transmise telle quelle: {exc}")
 
     upstream_request = client.build_request(
         request.method,
@@ -134,7 +186,7 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
                     _append_debug_log, f"\n===== REPONSE (stream brut, SSE) =====\n{raw}\n"
                 )
             except OSError as exc:
-                print(f"[sanitizing_proxy] échec écriture debug log réponse: {exc}")
+                _report(f"échec écriture debug log réponse: {exc}")
 
         response_iterator: AsyncIterator[bytes] = _tee_and_log()
     else:
