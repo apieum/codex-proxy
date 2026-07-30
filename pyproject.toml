@@ -2,7 +2,12 @@
 name = "agents-proxy"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.115",
+    "httpx>=0.27",
+    "uvicorn>=0.30",
+    "litellm[proxy]>=1.50",
+]
 
 [dependency-groups]
 dev = [

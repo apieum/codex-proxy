@@ -1,0 +1,29 @@
+# Configuration Codex CLI pour utiliser Cerebras via le proxy local.
+# À copier (ou fusionner) dans ~/.codex/config.toml
+#
+# Prérequis : le proxy doit tourner (./start_cerebras_proxy.sh) avant de
+# lancer `codex`.
+
+# --- Modèle et provider ---
+model = "cerebras-gpt-oss-120b"    # alias définis dans litellm_cerebras_config.yaml :
+                                    #   cerebras-gpt-oss-120b (recommandé)
+                                    #   cerebras-llama-3.3-70b
+                                    #   cerebras-qwen3-32b
+model_provider = "cerebras-local"
+
+# gpt-oss-120b n'accepte que low | medium | high (PAS "none")
+model_reasoning_effort = "medium"
+
+[model_providers.cerebras-local]
+name = "Cerebras via LiteLLM"
+base_url = "http://localhost:4000/v1"   # port du sanitizing_proxy, PAS celui de LiteLLM (4001)
+env_key = "LITELLM_MASTER_KEY"
+wire_api = "responses"
+
+# --- Désactive le connecteur Apps interne de Codex ---
+# Sans ça, Codex tente de joindre le backend ChatGPT au démarrage pour
+# lister les connecteurs (Slack, Notion, etc.), échoue faute de session
+# ChatGPT active, et peut bloquer le lancement ou spammer des warnings.
+# Si tu utilises ces connecteurs par ailleurs, retire ce bloc.
+[apps._default]
+enabled = false

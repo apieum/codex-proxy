@@ -28,6 +28,7 @@ if ! command -v uv &> /dev/null; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 CONFIG_PATH="$SCRIPT_DIR/litellm_cerebras_config.yaml"
 VENV_DIR="$SCRIPT_DIR/.venv"
 
@@ -45,7 +46,7 @@ cleanup() {
 trap cleanup EXIT
 
 echo "Démarrage de LiteLLM (interne, port 4001) ..."
-cd "$SCRIPT_DIR"
+cd "$REPO_ROOT"
 uv run --python "$VENV_DIR/bin/python" litellm --config "$CONFIG_PATH" --port 4001 &
 LITELLM_PID=$!
 
@@ -58,4 +59,7 @@ for i in $(seq 1 30); do
 done
 
 echo "Démarrage du proxy assainisseur sur http://localhost:4000 (celui que Codex doit utiliser) ..."
-uv run --python "$VENV_DIR/bin/python" uvicorn sanitizing_proxy:app --host 0.0.0.0 --port 4000
+# Lancé depuis REPO_ROOT (pas SCRIPT_DIR) pour que `proxy` soit résoluble comme
+# paquet Python -- sanitizing_proxy.py importe désormais via `proxy.custom_handler`
+# / `proxy.local_compactor` plutôt qu'en imports plats.
+uv run --python "$VENV_DIR/bin/python" uvicorn proxy.sanitizing_proxy:app --host 0.0.0.0 --port 4000

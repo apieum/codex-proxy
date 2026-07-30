@@ -13,14 +13,18 @@ Ce proxy lit le corps de toute requête POST /v1/responses, l'assainit
 avec sanitize_body() (custom_handler.py), puis la relaie telle quelle à
 LiteLLM. Tout le reste (GET /v1/models, etc.) est simplement transmis.
 """
+import asyncio
 import json
 import os
+from collections.abc import AsyncGenerator, AsyncIterator
+
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 
-from custom_handler import sanitize_body
-from local_compactor import compact_old_tool_outputs
+from proxy.custom_handler import sanitize_body
+from proxy.json_types import JSONValue
+from proxy.local_compactor import compact_old_tool_outputs
 
 LITELLM_UPSTREAM = "http://127.0.0.1:4001"
 DEBUG_LOG_PATH = "/tmp/cerebras_proxy_debug.log"
@@ -30,20 +34,22 @@ app = FastAPI()
 client = httpx.AsyncClient(timeout=None)
 
 
-def _debug_log(label: str, data) -> None:
+def _append_debug_log(text: str) -> None:
+    with open(DEBUG_LOG_PATH, "a") as f:
+        f.write(text)
+
+
+def _debug_log(label: str, data: JSONValue) -> None:
     if not DEBUG_ENABLED:
         return
     try:
-        with open(DEBUG_LOG_PATH, "a") as f:
-            f.write(f"\n===== {label} =====\n")
-            f.write(json.dumps(data, indent=2, ensure_ascii=False))
-            f.write("\n")
-    except Exception as exc:
+        _append_debug_log(f"\n===== {label} =====\n{json.dumps(data, indent=2, ensure_ascii=False)}\n")
+    except (OSError, TypeError, ValueError) as exc:
         print(f"[sanitizing_proxy] échec écriture debug log: {exc}")
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
-async def proxy(path: str, request: Request):
+async def proxy(path: str, request: Request) -> StreamingResponse:
     url = f"{LITELLM_UPSTREAM}/{path}"
 
     headers = dict(request.headers)
@@ -54,13 +60,13 @@ async def proxy(path: str, request: Request):
 
     if request.method == "POST" and path == "v1/responses" and body:
         try:
-            data = json.loads(body)
+            data: JSONValue = json.loads(body)
             _debug_log("AVANT sanitize_body", data)
             data = sanitize_body(data)
             data = await compact_old_tool_outputs(data)
             _debug_log("APRES sanitize_body + compaction", data)
             body = json.dumps(data).encode()
-        except Exception as exc:
+        except (ValueError, TypeError, KeyError) as exc:
             print(f"[sanitizing_proxy] échec du parsing/assainissement, requête transmise telle quelle: {exc}")
 
     upstream_request = client.build_request(
@@ -73,21 +79,20 @@ async def proxy(path: str, request: Request):
     upstream_response = await client.send(upstream_request, stream=True)
 
     if DEBUG_ENABLED and path == "v1/responses":
-        async def _tee_and_log():
-            chunks = []
+        async def _tee_and_log() -> AsyncGenerator[bytes, None]:
+            chunks: list[bytes] = []
             async for chunk in upstream_response.aiter_raw():
                 chunks.append(chunk)
                 yield chunk
             try:
                 raw = b"".join(chunks).decode("utf-8", errors="replace")
-                with open(DEBUG_LOG_PATH, "a") as f:
-                    f.write("\n===== REPONSE (stream brut, SSE) =====\n")
-                    f.write(raw)
-                    f.write("\n")
-            except Exception as exc:
+                await asyncio.to_thread(
+                    _append_debug_log, f"\n===== REPONSE (stream brut, SSE) =====\n{raw}\n"
+                )
+            except OSError as exc:
                 print(f"[sanitizing_proxy] échec écriture debug log réponse: {exc}")
 
-        response_iterator = _tee_and_log()
+        response_iterator: AsyncIterator[bytes] = _tee_and_log()
     else:
         response_iterator = upstream_response.aiter_raw()
 

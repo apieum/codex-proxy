@@ -16,6 +16,8 @@ original tel quel plutôt que de casser la requête.
 """
 import httpx
 
+from proxy.json_types import JSONDict, JSONValue
+
 OLLAMA_URL = "http://localhost:11434/api/chat"
 OLLAMA_MODEL = "hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF"
 COMPACT_THRESHOLD_CHARS = 1000  # en dessous, pas besoin de résumer
@@ -45,23 +47,30 @@ async def _summarize_locally(text: str, client: httpx.AsyncClient) -> str | None
         )
         resp.raise_for_status()
         data = resp.json()
-        return data.get("message", {}).get("content")
-    except Exception as exc:
+        if not isinstance(data, dict):
+            return None
+        message = data.get("message", {})
+        content = message.get("content") if isinstance(message, dict) else None
+        return content if isinstance(content, str) else None
+    except (httpx.HTTPError, ValueError) as exc:
         print(f"[local_compactor] échec résumé local (fail-open, contenu original conservé): {exc}")
         return None
 
 
-def _is_function_call_output(item: dict) -> bool:
+def _is_function_call_output(item: JSONDict) -> bool:
     return item.get("type") == "function_call_output" or (
         "call_id" in item and "output" in item
     )
 
 
-async def compact_old_tool_outputs(data: dict) -> dict:
+async def compact_old_tool_outputs(data: JSONValue) -> JSONValue:
     """
     Résume localement tous les function_call_output volumineux SAUF le
     dernier (le plus récent) de l'historique 'input'.
     """
+    if not isinstance(data, dict):
+        return data
+
     input_items = data.get("input")
     if not isinstance(input_items, list):
         return data
@@ -78,6 +87,8 @@ async def compact_old_tool_outputs(data: dict) -> dict:
     async with httpx.AsyncClient() as client:
         for idx in to_compact:
             item = input_items[idx]
+            if not isinstance(item, dict):
+                continue
             text = item.get("output")
             if not isinstance(text, str) or len(text) < COMPACT_THRESHOLD_CHARS:
                 continue
