@@ -57,3 +57,12 @@ def test_shell_chaining_is_never_allowed(shell_command: str) -> None:
     SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
 
     assert outcome.verdict != "allow"
+
+
+def test_shell_chaining_is_escalated() -> None:
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "git add fichier; rm -rf ~"]}
+
+    SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
+
+    assert outcome.verdict == "escalate"

@@ -27,14 +27,15 @@ class SafeCommandRules:
 
     def evaluate(self, action: JSONDict, outcome: ApprovalOutcome) -> None:
         shell_command = self._shell_command(action)
-        if _chains_other_commands(shell_command):
-            return
 
-        words = shell_command.split()
-        for prefix in self._safe_prefixes:
-            if words[: len(prefix)] == list(prefix):
-                outcome.allow()
-                return
+        # Un enchaînement disqualifie la voie rapide d'approbation, il ne
+        # dispense pas de rendre un verdict : la décision revient au modèle.
+        if not _chains_other_commands(shell_command):
+            words = shell_command.split()
+            for prefix in self._safe_prefixes:
+                if words[: len(prefix)] == list(prefix):
+                    outcome.allow()
+                    return
 
         outcome.escalate()
 
