@@ -1,6 +1,6 @@
 model_list:
-  # Seul modèle Cerebras confirmé disponible en production sur le catalogue
-  # public actuel (llama-3.3-70b et qwen-3-32b sont dépréciés).
+  # The only Cerebras model confirmed available in production on the current
+  # public catalogue (llama-3.3-70b and qwen-3-32b are deprecated).
   - model_name: cerebras-gpt-oss-120b
     litellm_params:
       model: cerebras/gpt-oss-120b
@@ -16,15 +16,15 @@ model_list:
         - include
         - max_tokens
         - n
-        - parallel_tool_calls   # non supporté sur gpt-oss-120b spécifiquement
-        - reasoning_effort      # on droppe la valeur envoyée par Codex (souvent invalide via le bridge)
-        - reasoning             # idem pour l'objet reasoning au format Responses API
-      reasoning_effort: medium   # valeur forcée, seule celle-ci part vers Cerebras
+        - parallel_tool_calls   # unsupported on gpt-oss-120b specifically
+        - reasoning_effort      # drop what Codex sends (often invalid through the bridge)
+        - reasoning             # same for the Responses-API reasoning object
+      reasoning_effort: medium   # forced value, the only one reaching Cerebras
 
-  # Même modèle que le trafic principal, dédié à l'auto-review : le proxy
-  # réduit la requête à ~220 tokens en amont, donc le verdict coûte ~0,0001 $
-  # et arrive en une seconde. `reasoning_effort: low` est le plancher --
-  # gpt-oss-120b refuse "none".
+  # Same model as the main traffic, dedicated to auto-review: the proxy shrinks
+  # the request to ~220 tokens upstream, so a verdict costs ~$0.0001 and lands
+  # in about a second. `reasoning_effort: low` is the floor -- gpt-oss-120b
+  # rejects "none".
   - model_name: cerebras-review
     litellm_params:
       model: cerebras/gpt-oss-120b
@@ -45,8 +45,8 @@ model_list:
         - reasoning
       reasoning_effort: low
 
-  # Modèle preview Cerebras, plus cher, "évaluation uniquement" -- gardé en
-  # option mais pas recommandé comme modèle principal.
+  # Cerebras preview model, pricier, "evaluation only" -- kept as an option but
+  # not recommended as the main model.
   - model_name: cerebras-zai-glm-4.7
     litellm_params:
       model: cerebras/zai-glm-4.7
@@ -63,31 +63,30 @@ model_list:
         - max_tokens
         - n
 
-  # Modèle gratuit OpenRouter, gardé en option de repli.
+  # Free OpenRouter model, kept as a fallback option.
   - model_name: openrouter-free-review
     litellm_params:
       model: openrouter/tencent/hy3:free
       api_key: os.environ/OPENROUTER_API_KEY
       drop_params: true
 
-# Codex appelle en interne un modèle "codex-auto-review" pour évaluer le
-# risque des commandes avant auto-approbation (git add, git commit, etc.).
-# Seule la zone grise arrive ici : le pré-filtre du proxy tranche les cas
-# certains sans aucun appel.
+# Codex internally calls a "codex-auto-review" model to assess the risk of a
+# command before auto-approving it. Only the grey zone reaches this alias: the
+# proxy pre-filter settles the clear-cut cases without any call at all.
 #
-# Routé vers Cerebras et non vers le modèle local : LFM2.5-1.2B ingère à
-# ~12 tok/s, soit ~19 s avant le premier token même après réduction du
-# prompt -- au-delà du délai d'inactivité de Codex. Contrepartie assumée :
-# la commande jugée sort de la machine, comme le reste du trafic Codex.
+# Routed to Cerebras rather than a local model: a 1.2B model ingests at
+# ~12 tok/s, i.e. ~19 s before the first token even after the prompt is shrunk,
+# which is past Codex's idle timeout. Accepted trade-off: the command being
+# judged leaves the machine, like the rest of Codex traffic.
 router_settings:
   model_group_alias:
     codex-auto-review: cerebras-review
 
-# Ignore silencieusement les paramètres que Cerebras ne supporte pas
-# (ex: parallel_tool_calls, envoyé par défaut par Codex via l'API Responses)
+# Silently ignore parameters Cerebras does not support (e.g.
+# parallel_tool_calls, sent by default by Codex through the Responses API).
 litellm_settings:
   drop_params: true
 
-# Clé que Codex devra présenter au proxy local (n'importe quelle valeur, sert juste d'auth locale)
+# Key Codex must present to the local proxy (any value; local auth only).
 general_settings:
   master_key: sk-local-proxy-1234

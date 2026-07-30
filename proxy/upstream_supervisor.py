@@ -1,10 +1,10 @@
 """
-Prise en charge du cycle de vie de LiteLLM par le proxy.
+Ownership of the LiteLLM process lifecycle by the proxy.
 
-Le proxy seul ne relaie nulle part : sans LiteLLM sur 4001, chaque requête
-finit en 502. Il démarre donc son upstream au lancement -- mais uniquement
-s'il n'écoute pas déjà, et il n'arrête à la fermeture que le processus qu'il
-a lui-même lancé, jamais celui d'un script tiers.
+The proxy alone relays nowhere: without LiteLLM on 4001, every request ends in
+a 502. So it starts its upstream on launch -- but only if nothing is listening
+already, and on shutdown it stops only the process it started itself, never
+one someone else launched.
 """
 from collections.abc import Awaitable, Callable
 from typing import Protocol

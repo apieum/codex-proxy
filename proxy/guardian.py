@@ -1,10 +1,10 @@
 """
-Traitement local des requêtes `codex-auto-review` (le « Guardian » de Codex).
+Local handling of `codex-auto-review` requests (Codex's "Guardian").
 
-Le pré-filtre tranche les cas certains sans solliciter aucun modèle. Quand il
-n'en fait pas partie, rien n'est répondu localement : la requête suit son
-chemin normal et, si elle échoue, Codex retombe sur l'approbation manuelle.
-Ce défaut vers l'humain est voulu — jamais d'approbation par défaut.
+The pre-filter settles the clear-cut cases without consulting any model. When a
+request is not one of them, nothing is answered locally: it follows its normal
+path and, should it fail, Codex falls back to manual approval. Defaulting to
+the human is deliberate -- never an approval by default.
 """
 import json
 from collections.abc import Iterator
@@ -17,19 +17,19 @@ from proxy.json_types import JSONDict, JSONValue
 GUARDIAN_MODEL = "codex-auto-review"
 PLANNED_ACTION_MARKER = "Planned action JSON:"
 
-# Remplace la politique de sécurité de Codex (18 k chars) : le modèle local
-# ingère à ~12 tok/s, la version d'origine demanderait des minutes par verdict.
-LOCAL_REVIEW_INSTRUCTIONS = (
-    "Tu juges UNE action de shell planifiée. Réponds uniquement par un objet "
-    "JSON {\"outcome\":\"allow\"} si l'action est sans danger, sinon "
-    "{\"outcome\":\"deny\",\"rationale\":\"<une phrase>\"}. Refuse si l'action "
-    "détruit des données, exfiltre des informations, affaiblit la sécurité du "
-    "poste, ou dépasse ce que l'utilisateur a demandé."
+# Replaces Codex's 18k-char security policy. Keeping the original would cost
+# minutes per verdict on a slow backend, and buys nothing for a yes/no answer.
+REVIEW_INSTRUCTIONS = (
+    "You are judging ONE planned shell action. Answer with a JSON object only: "
+    "{\"outcome\":\"allow\"} if the action is harmless, otherwise "
+    "{\"outcome\":\"deny\",\"rationale\":\"<one sentence>\"}. Deny if the action "
+    "destroys data, exfiltrates information, weakens the security of the "
+    "machine, or goes beyond what the user asked for."
 )
 
 
 class _CodexVerdict:
-    """Reçoit le verdict du pré-filtre et le met en forme pour Codex."""
+    """Receives the pre-filter verdict and shapes it for Codex."""
 
     def __init__(self) -> None:
         self._text: str | None = None
@@ -60,14 +60,14 @@ def local_review(body: JSONDict, rules: SafeCommandRules) -> Iterator[bytes] | N
 
 
 def compact_review_request(body: JSONDict) -> JSONDict:
-    """Réduit la requête escaladée à ce que le modèle local peut ingérer à temps."""
+    """Shrinks an escalated request to what the review model can ingest in time."""
     action = _planned_action(body)
     if action is None:
         return body
 
     compacted: JSONDict = {
         "model": body.get("model"),
-        "instructions": LOCAL_REVIEW_INSTRUCTIONS,
+        "instructions": REVIEW_INSTRUCTIONS,
         "input": [
             {
                 "type": "message",
@@ -79,8 +79,8 @@ def compact_review_request(body: JSONDict) -> JSONDict:
         ],
     }
 
-    # Le schéma de sortie est ce qui rend le verdict parsable : jamais de
-    # texte libre à interpréter côté proxy.
+    # The output schema is what keeps the verdict parsable: never free-form
+    # text for the proxy to interpret.
     for preserved in ("text", "stream", "prompt_cache_key"):
         if preserved in body:
             compacted[preserved] = body[preserved]

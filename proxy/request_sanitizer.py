@@ -1,7 +1,7 @@
 """
-Logique d'assainissement des requêtes Responses API avant transmission à
-Cerebras, appliquée par notre reverse-proxy maison : les hooks LiteLLM ne
-couvrent pas /v1/responses, le seul endpoint que Codex utilise.
+Sanitising of Responses API requests before they reach Cerebras, applied by
+our own reverse proxy: LiteLLM hooks do not cover /v1/responses, the only
+endpoint Codex uses.
 """
 from proxy.json_types import JSONDict, JSONValue
 
@@ -47,11 +47,11 @@ def _clean_tools(tools: JSONValue) -> JSONValue:
 
 def _is_empty_assistant_message(item: JSONDict) -> bool:
     """
-    Détecte les items 'message' assistant au contenu vide que Codex insère
-    parfois entre un function_call et son function_call_output (probablement
-    un point de contrôle de streaming). Ils s'intercalent dans l'historique
-    et cassent l'exigence stricte de Cerebras : un message assistant avec
-    tool_calls doit être IMMÉDIATEMENT suivi du message tool correspondant.
+    Detects the empty assistant 'message' items Codex sometimes inserts
+    between a function_call and its function_call_output (likely a streaming
+    checkpoint). They sit in the middle of the history and break Cerebras's
+    strict requirement: an assistant message carrying tool_calls must be
+    IMMEDIATELY followed by the matching tool message.
     """
     if item.get("type") != "message" or item.get("role") != "assistant":
         return False
@@ -83,13 +83,12 @@ def _is_function_call_output(item: JSONDict) -> bool:
 
 def _fix_tool_call_adjacency(input_items: JSONValue) -> JSONValue:
     """
-    Garantit que chaque function_call est IMMÉDIATEMENT suivi de son
-    function_call_output, comme l'exige Cerebras. Codex n'a pas cette
-    contrainte côté Responses API et intercale parfois d'autres items
-    (messages, vides ou non) entre les deux -- ce qui casse la conversion
-    vers Chat Completions. On déplace donc chaque output juste après son
-    call, et on retire les paires orphelines (call sans output, ou
-    inversement) qui provoqueraient la même erreur.
+    Guarantees every function_call is IMMEDIATELY followed by its
+    function_call_output, as Cerebras requires. Codex has no such constraint
+    on the Responses API side and sometimes inserts other items (empty or not)
+    between the two -- which breaks the conversion to Chat Completions. So each
+    output is moved right after its call, and orphan halves (a call with no
+    output, or the reverse) are dropped since they trigger the same error.
     """
     if not isinstance(input_items, list):
         return input_items
@@ -116,15 +115,14 @@ def _fix_tool_call_adjacency(input_items: JSONValue) -> JSONValue:
             continue
 
         if _is_function_call_output(item):
-            # Déjà replacé juste après son call -> on saute l'occurrence
-            # d'origine. Si jamais orphelin (pas de call correspondant),
-            # on le retire aussi.
+            # Already re-placed right after its call -> skip the original
+            # occurrence. If orphaned (no matching call), drop it too.
             continue
 
         if _is_function_call(item):
             cid = item.get("call_id")
             if not isinstance(cid, str) or cid not in matched_ids:
-                # call orphelin, sans output nulle part -> on le retire
+                # orphan call, no output anywhere -> drop it
                 continue
             result.append(item)
             result.append(output_by_call_id[cid])
@@ -136,8 +134,8 @@ def _fix_tool_call_adjacency(input_items: JSONValue) -> JSONValue:
 
 
 def _clean_orphan_tool_calls(input_items: JSONValue) -> JSONValue:
-    # Retire d'abord les messages assistant totalement vides (bruit inutile),
-    # puis garantit l'adjacence call/output pour tout le reste.
+    # First drop fully empty assistant messages (pure noise), then guarantee
+    # call/output adjacency for everything else.
     if not isinstance(input_items, list):
         return input_items
     filtered = [
@@ -148,7 +146,7 @@ def _clean_orphan_tool_calls(input_items: JSONValue) -> JSONValue:
 
 
 def sanitize_body(data: JSONValue) -> JSONValue:
-    """Assainit un corps de requête (format Responses API ou Chat Completions)."""
+    """Sanitises a request body (Responses API or Chat Completions format)."""
     if not isinstance(data, dict):
         return data
 

@@ -1,30 +1,31 @@
-# Configuration Codex CLI pour utiliser Cerebras via le proxy local.
-# À copier (ou fusionner) dans ~/.codex/config.toml
+# Codex CLI configuration for using Cerebras through the local proxy.
+# Copy (or merge) into ~/.codex/config.toml
 #
-# Prérequis : le proxy doit tourner avant de lancer `codex` --
-# `uv run uvicorn proxy.sanitizing_proxy:app --port 4000` depuis la racine
-# du dépôt.
+# Prerequisite: the proxy must be running before you launch `codex` --
+# `uv run uvicorn proxy.sanitizing_proxy:app --port 4000` from the repository
+# root.
 
-# --- Modèle et provider ---
-model = "cerebras-gpt-oss-120b"    # alias définis dans litellm_cerebras_config.yaml :
-                                    #   cerebras-gpt-oss-120b (recommandé)
-                                    #   cerebras-llama-3.3-70b
-                                    #   cerebras-qwen3-32b
+# --- Model and provider ---
+model = "cerebras-gpt-oss-120b"    # aliases defined in litellm_cerebras_config.yaml:
+                                   #   cerebras-gpt-oss-120b (recommended)
+                                   #   cerebras-zai-glm-4.7
+                                   #   openrouter-free-review
+                                   # cerebras-review is reserved for auto-review.
 model_provider = "cerebras-local"
 
-# gpt-oss-120b n'accepte que low | medium | high (PAS "none")
+# gpt-oss-120b accepts low | medium | high only (NOT "none")
 model_reasoning_effort = "medium"
 
 [model_providers.cerebras-local]
 name = "Cerebras via LiteLLM"
-base_url = "http://localhost:4000/v1"   # port du sanitizing_proxy, PAS celui de LiteLLM (4001)
+base_url = "http://localhost:4000/v1"   # the proxy port, NOT LiteLLM's (4001)
 env_key = "LITELLM_MASTER_KEY"
 wire_api = "responses"
 
-# --- Désactive le connecteur Apps interne de Codex ---
-# Sans ça, Codex tente de joindre le backend ChatGPT au démarrage pour
-# lister les connecteurs (Slack, Notion, etc.), échoue faute de session
-# ChatGPT active, et peut bloquer le lancement ou spammer des warnings.
-# Si tu utilises ces connecteurs par ailleurs, retire ce bloc.
+# --- Disable Codex's internal Apps connector ---
+# Without this, Codex tries to reach the ChatGPT backend at startup to list
+# connectors (Slack, Notion, ...), fails for lack of an active ChatGPT
+# session, and may hang the launch or spam warnings.
+# Remove this block if you actually use those connectors.
 [apps._default]
 enabled = false

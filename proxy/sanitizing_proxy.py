@@ -1,17 +1,17 @@
 """
-Petit reverse-proxy placé DEVANT LiteLLM.
+Small reverse proxy sitting IN FRONT OF LiteLLM.
 
-Pourquoi ce fichier existe : le hook async_pre_call_hook de LiteLLM ne
-couvre que /chat/completions, /embeddings, /image/generation -- PAS
-/v1/responses, l'endpoint que Codex utilise. custom_handler.py n'était
-donc jamais appelé pour les requêtes de Codex, malgré ce qu'on pensait.
+Why this file exists: LiteLLM's async_pre_call_hook only covers
+/chat/completions, /embeddings and /image/generation -- NOT /v1/responses,
+the endpoint Codex actually uses. A LiteLLM callback would therefore never
+run for Codex traffic.
 
-Architecture :
-    Codex --> ce proxy (port 4000) --> LiteLLM (port 4001, interne) --> Cerebras
+Architecture:
+    Codex --> this proxy (port 4000) --> LiteLLM (port 4001, internal) --> Cerebras
 
-Ce proxy lit le corps de toute requête POST /v1/responses, l'assainit
-avec sanitize_body() (custom_handler.py), puis la relaie telle quelle à
-LiteLLM. Tout le reste (GET /v1/models, etc.) est simplement transmis.
+It reads the body of every POST /v1/responses, sanitises it with
+sanitize_body() (request_sanitizer.py), then relays it to LiteLLM. Everything
+else (GET /v1/models, etc.) is passed straight through.
 """
 import asyncio
 import json
@@ -27,24 +27,24 @@ from fastapi.responses import StreamingResponse
 
 from proxy.approval_rules import SafeCommandRules
 from proxy.credentials import RequiredCredentials
-from proxy.custom_handler import sanitize_body
 from proxy.guardian import GUARDIAN_MODEL, compact_review_request, local_review
 from proxy.json_types import JSONValue
+from proxy.request_sanitizer import sanitize_body
 from proxy.upstream_supervisor import StoppableProcess, UpstreamSupervisor
 
 LITELLM_UPSTREAM = "http://127.0.0.1:4001"
 LITELLM_CONFIG_PATH = Path(__file__).with_name("litellm_cerebras_config.yaml")
 LITELLM_STARTUP_TIMEOUT_SECONDS = 60
 BACKEND_CREDENTIALS = RequiredCredentials(("CEREBRAS_API_KEY",))
-DEBUG_LOG_PATH = "/tmp/cerebras_proxy_debug.log"
-DEBUG_ENABLED = os.environ.get("CEREBRAS_PROXY_DEBUG", "").lower() in ("1", "true", "yes")
+DEBUG_LOG_PATH = "/tmp/codex_proxy_debug.log"
+DEBUG_ENABLED = os.environ.get("CODEX_PROXY_DEBUG", "").lower() in ("1", "true", "yes")
 
 client = httpx.AsyncClient(timeout=None)
 
 
 def _report(message: str) -> None:
-    """`flush` explicite : hors terminal, le tampon est perdu au SIGTERM."""
-    print(f"[sanitizing_proxy] {message}", flush=True)
+    """Explicit `flush`: outside a terminal the buffer is lost on SIGTERM."""
+    print(f"[codex-proxy] {message}", flush=True)
 
 
 async def _litellm_is_listening() -> bool:
@@ -56,12 +56,12 @@ async def _litellm_is_listening() -> bool:
 
 
 def _litellm_executable() -> str:
-    """`litellm` est un script console : `python -m litellm` n'existe pas."""
+    """`litellm` is a console script: `python -m litellm` does not exist."""
     return str(Path(sys.executable).with_name("litellm"))
 
 
 async def _spawn_litellm() -> StoppableProcess:
-    _report(f"LiteLLM absent, démarrage sur {LITELLM_UPSTREAM} ...")
+    _report(f"LiteLLM not running, starting it on {LITELLM_UPSTREAM} ...")
     return await asyncio.create_subprocess_exec(
         _litellm_executable(), "--config", str(LITELLM_CONFIG_PATH), "--port", "4001"
     )
@@ -70,10 +70,10 @@ async def _spawn_litellm() -> StoppableProcess:
 async def _await_litellm() -> None:
     for _ in range(LITELLM_STARTUP_TIMEOUT_SECONDS):
         if await _litellm_is_listening():
-            _report("LiteLLM prêt.")
+            _report("LiteLLM ready.")
             return
         await asyncio.sleep(1)
-    _report("LiteLLM n'a pas démarré à temps ; les requêtes répondront 502.")
+    _report("LiteLLM did not start in time; requests will answer 502.")
 
 
 @asynccontextmanager
@@ -92,11 +92,11 @@ app = FastAPI(lifespan=_managed_upstream)
 
 
 def _load_approval_rules() -> SafeCommandRules:
-    """Charge les règles du pré-filtre ; sans fichier, aucune approbation locale."""
+    """Loads the pre-filter rules; with no file, nothing is approved locally."""
     try:
         config = json.loads(Path(__file__).with_name("approval_rules.json").read_text("utf-8"))
     except (OSError, ValueError) as exc:
-        _report(f"règles d'approbation illisibles, pré-filtre inactif : {exc}")
+        _report(f"approval rules unreadable, pre-filter disabled: {exc}")
         return SafeCommandRules(safe_prefixes=())
     if not isinstance(config, dict):
         return SafeCommandRules(safe_prefixes=())
@@ -107,8 +107,8 @@ APPROVAL_RULES = _load_approval_rules()
 
 
 def _unreachable_upstream(exc: httpx.TransportError) -> StreamingResponse:
-    """Nomme le service en panne : Codex n'affiche qu'un « high demand » générique."""
-    message = f"LiteLLM injoignable sur {LITELLM_UPSTREAM} : {exc}"
+    """Names the broken service: Codex only shows a generic "high demand"."""
+    message = f"LiteLLM unreachable on {LITELLM_UPSTREAM}: {exc}"
     _report(message)
     return StreamingResponse(
         iter([json.dumps({"error": {"message": message, "type": "upstream_unreachable"}}).encode()]),
@@ -128,7 +128,7 @@ def _debug_log(label: str, data: JSONValue) -> None:
     try:
         _append_debug_log(f"\n===== {label} =====\n{json.dumps(data, indent=2, ensure_ascii=False)}\n")
     except (OSError, TypeError, ValueError) as exc:
-        _report(f"échec écriture debug log: {exc}")
+        _report(f"could not write debug log: {exc}")
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
@@ -145,25 +145,25 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
         try:
             data: JSONValue = json.loads(body)
 
-            # Le Guardian de Codex est tranché localement quand les règles le
-            # permettent : réponse immédiate, sans appel réseau ni modèle.
+            # Codex's Guardian is settled locally when the rules allow it:
+            # immediate answer, no network call and no model.
             if isinstance(data, dict) and data.get("model") == GUARDIAN_MODEL:
                 verdict_stream = local_review(data, APPROVAL_RULES)
                 if verdict_stream is not None:
-                    _debug_log("VERDICT LOCAL (auto-review)", data)
+                    _debug_log("LOCAL VERDICT (auto-review)", data)
                     return StreamingResponse(verdict_stream, media_type="text/event-stream")
 
-                # Zone grise : le modèle local tranche, mais seulement s'il
-                # reçoit un prompt qu'il peut ingérer avant le timeout.
+                # Grey zone: the model decides, but only if it receives a
+                # prompt it can ingest before the timeout.
                 data = compact_review_request(data)
-                _debug_log("ESCALADE (requete reduite)", data)
+                _debug_log("ESCALATION (shrunk request)", data)
 
-            _debug_log("AVANT sanitize_body", data)
+            _debug_log("BEFORE sanitize_body", data)
             data = sanitize_body(data)
-            _debug_log("APRES sanitize_body", data)
+            _debug_log("AFTER sanitize_body", data)
             body = json.dumps(data).encode()
         except (ValueError, TypeError, KeyError) as exc:
-            _report(f"échec du parsing/assainissement, requête transmise telle quelle: {exc}")
+            _report(f"parsing/sanitising failed, request relayed unchanged: {exc}")
 
     upstream_request = client.build_request(
         request.method,
@@ -186,10 +186,10 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
             try:
                 raw = b"".join(chunks).decode("utf-8", errors="replace")
                 await asyncio.to_thread(
-                    _append_debug_log, f"\n===== REPONSE (stream brut, SSE) =====\n{raw}\n"
+                    _append_debug_log, f"\n===== RESPONSE (raw SSE stream) =====\n{raw}\n"
                 )
             except OSError as exc:
-                _report(f"échec écriture debug log réponse: {exc}")
+                _report(f"could not write response debug log: {exc}")
 
         response_iterator: AsyncIterator[bytes] = _tee_and_log()
     else:

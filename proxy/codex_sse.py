@@ -1,14 +1,14 @@
 """
-Fabrication d'une réponse au format Responses API, telle que Codex l'attend.
+Builds a Responses API reply in the shape Codex expects.
 
-Codex n'exige qu'un seul événement pour considérer une réponse aboutie :
-`response.completed`. Son absence provoque un échec fatal côté client
-(« stream closed before response.completed »), jamais une dégradation
-silencieuse — voir `docs/API_CODEX.md` §6.
+Codex requires a single event to consider a response complete:
+`response.completed`. Its absence is a fatal client-side failure ("stream
+closed before response.completed"), never a silent degradation -- see
+`docs/CODEX_API.md` section 6.
 
-Son `usage` doit être complet : Codex le désérialise dans une structure aux
-champs obligatoires, et un objet vide referme le flux sur
-« failed to parse ResponseCompleted: missing field `input_tokens` ».
+Its `usage` must be complete: Codex deserialises it into a struct with
+required fields, and an empty object closes the stream on "failed to parse
+ResponseCompleted: missing field `input_tokens`".
 """
 import json
 from collections.abc import Iterator

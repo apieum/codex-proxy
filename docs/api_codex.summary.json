@@ -1,61 +1,130 @@
 {
   "_meta": {
-    "source": "capture réelle 2026-07-30, 94 requêtes POST /v1/responses (93 main + 1 auto-review)",
-    "detail_doc": "docs/API_CODEX.md",
-    "gap": "aucun — format de réponse établi depuis la source Codex (codex-rs/codex-api/src/sse/responses.rs)"
+    "source": "real capture 2026-07-30, 94 POST /v1/responses requests (93 main + 1 auto-review)",
+    "detail_doc": "docs/CODEX_API.md",
+    "gap": "none -- response format established from Codex source (codex-rs/codex-api/src/sse/responses.rs)"
   },
   "response_sse": {
-    "events": ["response.created", "response.output_item.added", "response.output_item.done", "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done", "response.reasoning_summary_part.added", "response.custom_tool_call_input.delta", "response.failed", "response.incomplete", "response.completed"],
-    "obligatoire": "response.completed uniquement — son absence = erreur fatale 'stream closed before response.completed'; les delta ne servent qu'à l'affichage",
-    "minimum_viable": "response.created + response.output_item.done (item message/output_text portant le JSON du verdict) + response.completed",
-    "champs": {"output_item.*": "item→ResponseItem", "*.delta": "delta + content_index|summary_index", "failed": "response.error{code,message,plan_type,resets_at}", "incomplete": "response.incomplete_details.reason", "completed": "response{id,usage,end_turn}"},
-    "piege": "Codex applique un idle timeout sur le flux : émettre sans attendre la fin du calcul local"
+    "events": [
+      "response.created",
+      "response.output_item.added",
+      "response.output_item.done",
+      "response.output_text.delta",
+      "response.reasoning_text.delta",
+      "response.reasoning_summary_text.delta",
+      "response.reasoning_summary_text.done",
+      "response.reasoning_summary_part.added",
+      "response.custom_tool_call_input.delta",
+      "response.failed",
+      "response.incomplete",
+      "response.completed"
+    ],
+    "minimum_viable": "response.created + response.output_item.done (message/output_text item carrying the verdict JSON) + response.completed",
+    "mandatory": "response.completed only -- its absence is a fatal 'stream closed before response.completed'; delta events only drive display",
+    "fields": {
+      "output_item.*": "item→ResponseItem",
+      "*.delta": "delta + content_index|summary_index",
+      "failed": "response.error{code,message,plan_type,resets_at}",
+      "incomplete": "response.incomplete_details.reason",
+      "completed": "response{id,usage,end_turn} -- usage MUST carry input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens, total_tokens; an empty object fails the whole stream"
+    },
+    "trap": "Codex applies an idle timeout to the stream: start emitting without waiting for the computation to finish"
   },
   "endpoints": {
-    "POST /v1/responses": "tout le trafic Codex (main + auto-review), stream=true store=false",
-    "GET /v1/models": "cité par les erreurs, non observé — possible validation des noms de modèles"
+    "POST /v1/responses": "all Codex traffic (main + auto-review), stream=true store=false",
+    "GET /v1/models": "cited by errors, not observed -- possibly validates model names"
   },
   "request_envelope": {
-    "model": "cerebras-gpt-oss-120b | codex-auto-review — SEUL discriminant de routage",
-    "instructions": "prompt système complet, str ~20k chars, identique à chaque requête",
-    "input": "historique COMPLET renvoyé à chaque tour (types: message, function_call, function_call_output)",
-    "tools": "voir tools_main / guardian.tools",
+    "model": "cerebras-gpt-oss-120b | codex-auto-review -- the ONLY routing discriminator",
+    "instructions": "full system prompt, str ~20k chars, identical on every request",
+    "input": "FULL history resent every turn (types: message, function_call, function_call_output)",
+    "tools": "see tools_main / guardian.tools",
     "tool_choice": "auto",
-    "parallel_tool_calls": "false(main)|true(guardian) — droppé pour Cerebras",
-    "reasoning": {"effort": "medium(main)|low(guardian)", "summary": "auto"},
+    "parallel_tool_calls": "false(main)|true(guardian) -- dropped for Cerebras",
+    "reasoning": {
+      "effort": "medium(main)|low(guardian)",
+      "summary": "auto"
+    },
     "store": false,
     "stream": true,
-    "include": ["reasoning.encrypted_content — à dropper hors OpenAI"],
+    "include": [
+      "reasoning.encrypted_content -- drop outside OpenAI"
+    ],
     "prompt_cache_key": "<session_id> | guardian:<session_id>",
-    "client_metadata": "ids codex (installation/thread/turn/session) — droppé",
-    "text": "GUARDIAN SEULEMENT: {verbosity:low, format:{type:json_schema,...}}"
+    "client_metadata": "codex ids (installation/thread/turn/session) -- dropped",
+    "text": "GUARDIAN ONLY: {verbosity:low, format:{type:json_schema,...}}"
   },
   "input_items": {
-    "message": {"id": "msg_<uuid7>", "role": "developer|user|assistant", "content": [{"type": "input_text|output_text", "text": "…"}], "note": "assistant parfois texte vide (checkpoints à retirer); developer=<permissions instructions>; user=<environment_context> XML, AGENTS.md, prompts"},
-    "function_call": {"name": "str", "arguments": "STRING json (pas objet)", "call_id": "str"},
-    "function_call_output": {"id": "fco_<uuid7>", "call_id": "str", "output": "préfixe méta 'Chunk ID/Wall time/Process exited/Original token count: N' + 'Output:\\n' + corps — ne résumer QUE le corps, le préfixe donne le compte de tokens gratuit"}
+    "message": {
+      "id": "msg_<uuid7>",
+      "role": "developer|user|assistant",
+      "content": [
+        {
+          "type": "input_text|output_text",
+          "text": "…"
+        }
+      ],
+      "note": "assistant sometimes has empty text (checkpoints to strip); developer=<permissions instructions>; user=<environment_context> XML, AGENTS.md, prompts"
+    },
+    "function_call": {
+      "name": "str",
+      "arguments": "JSON STRING (not an object)",
+      "call_id": "str"
+    },
+    "function_call_output": {
+      "id": "fco_<uuid7>",
+      "call_id": "str",
+      "output": "metadata prefix 'Chunk ID/Wall time/Process exited/Original token count: N' + 'Output:\\n' + body -- summarise ONLY the body, the prefix gives a free token count"
+    }
   },
   "tools_main": {
-    "function": ["exec_command", "write_stdin", "view_image", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource", "update_plan", "request_user_input", "get_goal", "create_goal", "update_goal"],
-    "non_function_strippés": ["namespace:multi_agent_v1", "namespace:mcp__*", "web_search"]
+    "function": [
+      "exec_command",
+      "write_stdin",
+      "view_image",
+      "list_mcp_resources",
+      "list_mcp_resource_templates",
+      "read_mcp_resource",
+      "update_plan",
+      "request_user_input",
+      "get_goal",
+      "create_goal",
+      "update_goal"
+    ],
+    "non_function_stripped": [
+      "namespace:multi_agent_v1",
+      "namespace:mcp__*",
+      "web_search"
+    ]
   },
   "guardian": {
     "model": "codex-auto-review",
-    "role": "juge UNE action planifiée: risque intrinsèque × autorisation user → allow/deny",
-    "instructions": "18446 chars: Evidence Handling (trust: user/developer/AGENTS.md/request_user_input seulement), scoring user_authorization(unknown|low|medium|high), risk(low|medium|high|critical), policy par catégorie (exfiltration/credentials/security-weakening/destructive/low-risk), outcome policy: low,medium→allow; high→allow ssi auth≥medium; critical→deny",
+    "role": "judges ONE planned action: intrinsic risk x user authorization -> allow/deny",
+    "instructions": "18446 chars: Evidence Handling (trust: user/developer/AGENTS.md/request_user_input only), scoring user_authorization(unknown|low|medium|high), risk(low|medium|high|critical), per-category policy (exfiltration/credentials/security-weakening/destructive/low-risk), outcome policy: low,medium->allow; high->allow iff auth>=medium; critical->deny",
     "input_3_messages": [
       "developer: <permissions instructions>",
-      "user: '# AGENTS.md instructions for <path>' + contenu AGENTS.md",
-      "user: multi-parts input_text: intro 'untrusted evidence' → '>>> TRANSCRIPT START' → entrées numérotées sélectives '[N] user: …' '[N] tool exec_command call: {json}' '[N] tool exec_command result: …' → 'Assess the exact planned action below' → 'Planned action JSON:' → {command[],cwd,justification,sandbox_permissions,tool,tty} → '>>> APPROVAL REQUEST END'"
+      "user: '# AGENTS.md instructions for <path>' + AGENTS.md content",
+      "user: multi-part input_text: intro 'untrusted evidence' -> '>>> TRANSCRIPT START' -> selective numbered entries '[N] user: ...' '[N] tool exec_command call: {json}' '[N] tool exec_command result: ...' -> 'Assess the exact planned action below' -> 'Planned action JSON:' -> {command[],cwd,justification,sandbox_permissions,tool,tty} -> '>>> APPROVAL REQUEST END'"
     ],
-    "tools": ["exec_command", "write_stdin", "view_image — investigation lecture seule; un 1.2B local: retirer tools, forcer réponse directe"],
-    "output_schema": {"name": "codex_output_schema", "risk_level": "low|medium|high|critical", "user_authorization": "unknown|low|medium|high", "outcome": "allow|deny (SEUL requis)", "rationale": "str", "raccourci_low_risk": "{\"outcome\":\"allow\"} seul"},
-    "on_error": "toute erreur HTTP → Codex rejette l'action et interdit le contournement → fail-safe déjà côté Codex; erreur locale acceptable, JAMAIS fabriquer allow par défaut",
-    "contraintes_local": "perf mesurée LFM2.5-1.2B-Instruct CPU: ingestion 11.65 tok/s, génération 6.11 tok/s → relayer le prompt Guardian complet (8k+ tok ≈ 11 min) est NON VIABLE; stratégie: pré-filtre déterministe + prompt local réécrit ≤300 tok (préfixe fixe caché via serveur résident) + sortie JSON-schema/GBNF ≤40 tok, température ≤0.2 — voir DIRECTION.md M1.2/M1.3"
+    "tools": [
+      "exec_command",
+      "write_stdin",
+      "view_image -- read-only investigation; strip tools for a small model and force a direct answer"
+    ],
+    "output_schema": {
+      "name": "codex_output_schema",
+      "risk_level": "low|medium|high|critical",
+      "user_authorization": "unknown|low|medium|high",
+      "outcome": "allow|deny (the ONLY required field)",
+      "rationale": "str",
+      "low_risk_shortcut": "{\"outcome\":\"allow\"} seul"
+    },
+    "on_error": "any HTTP error -> Codex rejects the action and forbids workarounds -> fail-safe already lives in Codex; a local error is acceptable, NEVER fabricate a default allow",
+    "backend_constraints": "measured LFM2.5-1.2B-Instruct on CPU: ingestion 11.65 tok/s, generation 6.11 tok/s -> relaying the full Guardian prompt (8k+ tok = ~11 min) is NOT VIABLE; strategy: deterministic pre-filter + rewritten prompt <=300 tok + JSON-schema output <=40 tok, temperature <=0.2 -- see DIRECTION.md M1.2/M1.3"
   },
   "compaction_facts": {
-    "historique_resent_chaque_tour": "2900 messages + 2004 paires call/output sur 93 requêtes d'une session",
-    "instructions_identiques": "candidat n°1 au prompt caching provider (prompt_cache_key déjà transmis)",
-    "token_count_gratuit": "chaque function_call_output annonce 'Original token count: N' dans son préfixe"
+    "history_resent_every_turn": "2900 messages + 2004 call/output pairs over 93 requests in one session",
+    "identical_instructions": "prime candidate for provider prompt caching (prompt_cache_key already transmitted)",
+    "free_token_count": "every function_call_output announces 'Original token count: N' in its prefix"
   }
 }

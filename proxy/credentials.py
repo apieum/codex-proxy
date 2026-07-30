@@ -1,9 +1,9 @@
 """
-Contrôle des credentials attendus par les backends configurés.
+Checks the credentials the configured backends expect.
 
-Sans clé, LiteLLM démarre normalement et l'échec ne surgit qu'à la première
-requête, en erreur d'authentification opaque côté Codex. Le signaler au
-démarrage évite de chercher la panne dans le proxy.
+Without a key, LiteLLM starts normally and the failure only surfaces on the
+first request, as an opaque authentication error on the Codex side. Reporting
+it at startup saves looking for the fault inside the proxy.
 """
 from collections.abc import Callable, Mapping, Sequence
 
@@ -17,4 +17,4 @@ class RequiredCredentials:
     ) -> None:
         for name in self._names:
             if not environment.get(name):
-                report(f"{name} n'est pas définie : les appels au modèle échoueront.")
+                report(f"{name} is not set: calls to the model will fail.")

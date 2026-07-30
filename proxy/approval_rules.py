@@ -1,26 +1,26 @@
 """
-Pré-filtre déterministe des actions soumises à l'auto-review de Codex.
+Deterministic pre-filter for the actions Codex submits to auto-review.
 
-Tranche localement, sans solliciter de modèle, les actions que la configuration
-permet de décider avec certitude : refus sur un préfixe interdit, approbation
-sur un préfixe sûr. Tout le reste est escaladé vers le modèle local, trop lent
-pour être placé sur le chemin critique de chaque approbation.
+Decides locally, without consulting any model, the actions configuration can
+settle with certainty: deny on a forbidden prefix, allow on a safe one.
+Everything else is escalated to the review model, too slow to sit on the
+critical path of every approval.
 
-L'ordre d'évaluation est une propriété de sécurité : la liste noire passe avant
-la liste blanche, jamais l'inverse.
+Evaluation order is a security property: the denylist runs before the
+allowlist, never the other way round.
 """
 from collections.abc import Sequence
 from typing import Protocol, Self
 
 from proxy.json_types import JSONDict, JSONValue
 
-# Opérateurs de contrôle du shell : un préfixe sûr ne garantit plus rien dès
-# qu'ils apparaissent, puisqu'ils permettent d'enchaîner, de substituer ou de
-# rediriger vers une commande arbitraire.
+# Shell control operators: a safe prefix guarantees nothing once they appear,
+# since they allow chaining, substituting or redirecting into an arbitrary
+# command.
 SHELL_CONTROL_CHARACTERS = frozenset(";&|`$()<>\n\r")
 
-# Forcer, c'est passer outre une protection que la commande applique par
-# défaut : le préfixe reste sûr, l'effet ne l'est plus.
+# Forcing means overriding a safeguard the command applies by default: the
+# prefix stays safe, the effect no longer is.
 FORCING_OPTIONS = frozenset({"--force", "-f"})
 
 
@@ -50,15 +50,15 @@ class SafeCommandRules:
         shell_command = self._shell_command(action)
         words = _without_git_working_directory(shell_command.split())
 
-        # Un refus l'emporte toujours : la liste noire passe avant la voie
-        # rapide, sinon un préfixe autorisé suffirait à la contourner.
+        # A denial always wins: the denylist runs before the fast path, or an
+        # allowed prefix would be enough to bypass it.
         denied = _matching_prefix(words, self._denied_prefixes)
         if denied is not None:
-            outcome.deny(f"préfixe interdit : {' '.join(denied)}")
+            outcome.deny(f"forbidden prefix: {' '.join(denied)}")
             return
 
-        # Un enchaînement disqualifie la voie rapide d'approbation, il ne
-        # dispense pas de rendre un verdict : la décision revient au modèle.
+        # Chaining disqualifies the fast approval path; it does not excuse us
+        # from returning a verdict, so the decision goes to the model.
         safe = _matching_prefix(words, self._safe_prefixes)
         if safe is not None and _stays_within_the_safe_prefix(shell_command, words):
             outcome.allow()
@@ -76,12 +76,12 @@ class SafeCommandRules:
 
 def _without_git_working_directory(words: Sequence[str]) -> Sequence[str]:
     """
-    `git -C <dir> add x` se décide comme `git add x` : l'option déplace le
-    répertoire d'exécution, elle ne change pas la commande évaluée.
+    `git -C <dir> add x` is decided like `git add x`: the option moves the
+    working directory, it does not change the command being evaluated.
 
-    Seule `-C` est neutralisée. `-c <clé>=<valeur>` ne l'est pas : plusieurs
-    clés de configuration (`alias.*`, `core.pager`, `core.sshCommand`)
-    exécutent une commande arbitraire, ce qui en fait un enchaînement déguisé.
+    Only `-C` is neutralised. `-c <key>=<value>` is not: several configuration
+    keys (`alias.*`, `core.pager`, `core.sshCommand`) run an arbitrary command,
+    which makes it chaining in disguise.
     """
     if not words or words[0] != "git":
         return words
