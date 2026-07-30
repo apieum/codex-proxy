@@ -75,30 +75,58 @@ requête via un petit modèle local au lieu de la relayer vers Cerebras.
    agents). Reste un trou : le **format de réponse SSE** n'a pas été capturé —
    à compléter lors d'une prochaine session avec le tee de réponse actif
    (`CEREBRAS_PROXY_DEBUG=1`, réponses loggées par `sanitizing_proxy.py`).
-2. **M1.2 — Route minimale.** Deux options, à trancher après M1.1 :
-   - *Option A (préférée si suffisante)* : ajouter une entrée `model_list`
-     dans `litellm_cerebras_config.yaml` avec `model_name: codex-auto-review`
-     pointant vers `ollama/<modèle-local>`. Zéro code Python, LiteLLM fait
-     déjà le bridge Responses→ChatCompletions. Tester d'abord ça.
-   - *Option B (si A ne suffit pas — ex. besoin d'un prompt réécrit ou d'une
-     sortie contrainte)* : brancher la décision de routage dans le proxy
-     (nouveau module `proxy/router.py`), qui délègue à un backend local.
-3. **M1.3 — Contraindre la sortie.** Le verdict d'approbation doit être
-   parsable par Codex à tous les coups. Utiliser la sortie structurée
-   (format JSON schema d'Ollama, ou grammaire GBNF de llama.cpp) plutôt que
-   d'espérer que le modèle réponde bien. Température basse (≤ 0.2).
-4. **M1.4 — Exposer le modèle dans `/v1/models`** si Codex le vérifie.
+2. **M1.2 — Route dans le proxy avec réécriture du prompt (Option B
+   imposée).** L'option « alias LiteLLM → ollama qui relaie la requête telle
+   quelle » est **écartée** par les mesures de performance (voir encadré
+   ci-dessous) : le prompt Guardian complet (~8 000+ tokens) prendrait ~11
+   minutes à ingérer sur le matériel cible. Le proxy doit donc intercepter
+   `model == "codex-auto-review"` (nouveau module `proxy/router.py`) et
+   **construire une requête locale radicalement réduite** :
+   - politique de sécurité distillée en un prompt système court et FIXE
+     (≤ ~300 tokens) placé en préfixe pour profiter du cache de prompt du
+     serveur local (`llama-server --cache-prompt` / Ollama `keep_alive`) —
+     le préfixe fixe n'est alors ingéré qu'une fois par session ;
+   - partie variable minimale : l'objet `Planned action JSON` (~100-200
+     tokens), le `cwd`, et au plus les derniers messages user du transcript ;
+   - PAS le prompt Guardian de 18 k chars, PAS les AGENTS.md complets,
+     PAS le transcript intégral, PAS les tools (réponse directe forcée).
+3. **M1.3 — Pré-filtre déterministe AVANT le LLM.** La plupart des actions
+   évaluées sont banales (`git add`, `ls`, lectures de fichiers...). Une
+   liste de règles locales (allowlist de préfixes de commandes sûrs,
+   denylist de motifs destructeurs évidents) tranche instantanément les cas
+   clairs ; le modèle local n'est consulté que pour la zone grise. Les
+   règles sont de la config, pas du code en dur. Un cas non couvert par les
+   règles ET par un verdict LLM dans le délai imparti → erreur remontée
+   (= refus d'auto-approbation côté Codex, voir invariant).
+4. **M1.4 — Contraindre la sortie.** Le verdict doit être parsable à tous
+   les coups : sortie structurée (format JSON schema d'Ollama, ou grammaire
+   GBNF de llama.cpp) conforme à `codex_output_schema` (voir
+   `docs/API_CODEX.md` §5.4), température ≤ 0.2, sortie plafonnée à
+   quelques dizaines de tokens. Ne jamais parser du texte libre.
+5. **M1.5 — Exposer le modèle dans `/v1/models`** si Codex le vérifie.
 
-**Choix du modèle local.** L'utilisateur a testé `LFM2.5-1.2B-Thinking` : bon
-mais trop lent (reasoning trop long) sur son matériel. Directives :
-- Préférer **`LFM2.5-1.2B-Instruct`** (variante non-thinking, déjà utilisée par
-  `local_compactor.py` : `hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF`) — la tâche
-  « approuver/refuser une commande » est de la classification, pas du
-  raisonnement long.
-- Si la variante Thinking est retenue malgré tout : plafonner les tokens de
-  sortie et/ou couper la phase de réflexion (option du serveur), sinon la
-  latence tue l'usage interactif.
-- Le backend local est **configurable** (URL + nom de modèle), pas codé en dur.
+**Performance mesurée du modèle local (2026-07-30, matériel de
+l'utilisateur, LFM2.5-1.2B-Instruct via llama-cli, CPU).**
+
+| Métrique | Mesure | Conséquence |
+|---|---|---|
+| Ingestion du prompt | **11,65 tok/s** (85,8 ms/token) | 8 000 tokens ≈ 11,5 min ; 300 tokens ≈ 26 s ; le budget de prompt NON caché doit rester ≤ ~300 tokens |
+| Génération | **6,11 tok/s** (163,8 ms/token) | verdict JSON complet (~40 tokens) ≈ 7 s ; `{"outcome":"allow"}` ≈ 1,5 s |
+| Chargement modèle | 0,33 s | négligeable si le serveur reste résident |
+
+Directives qui en découlent :
+- **Serveur résident obligatoire** (llama-server ou Ollama avec
+  `keep_alive`), jamais un lancement de CLI par requête, et cache de prompt
+  activé pour amortir le préfixe fixe.
+- Préférer **`LFM2.5-1.2B-Instruct`** (non-thinking, déjà utilisé par
+  `local_compactor.py`). La variante Thinking testée par l'utilisateur
+  génère trop de tokens de raisonnement : à ~6 tok/s, chaque token de
+  réflexion coûte 164 ms — proscrite pour ce service.
+- Objectif de latence de bout en bout pour un verdict : **< 30 s** dans la
+  zone grise, **< 1 s** pour les cas tranchés par le pré-filtre (M1.3).
+- Le backend local est **configurable** (URL + nom de modèle + budget de
+  tokens), pas codé en dur. Si le matériel évolue (GPU), seuls les budgets
+  changent, pas l'architecture.
 
 **Invariant de sécurité (non négociable).** En cas d'échec du modèle local
 (Ollama éteint, timeout, sortie non parsable), le service auto-review doit

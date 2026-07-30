@@ -44,7 +44,7 @@
     "tools": ["exec_command", "write_stdin", "view_image — investigation lecture seule; un 1.2B local: retirer tools, forcer réponse directe"],
     "output_schema": {"name": "codex_output_schema", "risk_level": "low|medium|high|critical", "user_authorization": "unknown|low|medium|high", "outcome": "allow|deny (SEUL requis)", "rationale": "str", "raccourci_low_risk": "{\"outcome\":\"allow\"} seul"},
     "on_error": "toute erreur HTTP → Codex rejette l'action et interdit le contournement → fail-safe déjà côté Codex; erreur locale acceptable, JAMAIS fabriquer allow par défaut",
-    "contraintes_local": "prompt ≈8k+ tokens → contexte local ≥16k (LFM2.5 supporte 32k, le -c 4096 actuel est insuffisant); sortie via JSON-schema Ollama ou grammaire GBNF, température ≤0.2"
+    "contraintes_local": "perf mesurée LFM2.5-1.2B-Instruct CPU: ingestion 11.65 tok/s, génération 6.11 tok/s → relayer le prompt Guardian complet (8k+ tok ≈ 11 min) est NON VIABLE; stratégie: pré-filtre déterministe + prompt local réécrit ≤300 tok (préfixe fixe caché via serveur résident) + sortie JSON-schema/GBNF ≤40 tok, température ≤0.2 — voir DIRECTION.md M1.2/M1.3"
   },
   "compaction_facts": {
     "historique_resent_chaque_tour": "2900 messages + 2004 paires call/output sur 93 requêtes d'une session",
