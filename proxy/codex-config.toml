@@ -1,8 +1,9 @@
 # Configuration Codex CLI pour utiliser Cerebras via le proxy local.
 # À copier (ou fusionner) dans ~/.codex/config.toml
 #
-# Prérequis : le proxy doit tourner (./start_cerebras_proxy.sh) avant de
-# lancer `codex`.
+# Prérequis : le proxy doit tourner avant de lancer `codex` --
+# `uv run uvicorn proxy.sanitizing_proxy:app --port 4000` depuis la racine
+# du dépôt.
 
 # --- Modèle et provider ---
 model = "cerebras-gpt-oss-120b"    # alias définis dans litellm_cerebras_config.yaml :

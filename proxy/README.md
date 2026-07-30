@@ -21,7 +21,6 @@ requête *avant* qu'elle n'atteigne LiteLLM.
 
 | Fichier | Rôle |
 |---|---|
-| `start_cerebras_proxy.sh` | Démarre le proxy (qui lance LiteLLM lui-même s'il n'écoute pas déjà) |
 | `litellm_cerebras_config.yaml` | Config LiteLLM : modèles Cerebras exposés, clé API, filtrage de paramètres |
 | `custom_handler.py` | Fonction `sanitize_body()` : nettoie le JSON Responses API (voir "Problèmes résolus") |
 | `sanitizing_proxy.py` | Reverse-proxy FastAPI (port 4000) qui applique `sanitize_body()` avant de relayer à LiteLLM (port 4001) |
@@ -37,22 +36,23 @@ requête *avant* qu'elle n'atteigne LiteLLM.
 - Une clé API Cerebras (gratuite ou payante) depuis [cloud.cerebras.ai](https://cloud.cerebras.ai)
 - Codex CLI installé
 
-### 2. Lancer le proxy depuis le dépôt
+### 2. Lancer le proxy depuis la racine du dépôt
 ```bash
 export CEREBRAS_API_KEY="ta_clé_cerebras"
-./proxy/start_cerebras_proxy.sh
+uv run uvicorn proxy.sanitizing_proxy:app --port 4000
 ```
 
-Le script se lance **depuis la racine du dépôt**, jamais depuis une copie des
-fichiers : `sanitizing_proxy` importe ses modules via le paquet `proxy.`, et
-une copie détachée fige silencieusement le code à la version copiée — les
-correctifs suivants n'ont alors aucun effet.
-Laisse ce terminal ouvert tant que tu utilises Codex avec Cerebras.
+Deux points non négociables dans cette commande :
+- **depuis la racine du dépôt**, jamais depuis une copie des fichiers :
+  `sanitizing_proxy` importe ses modules via le paquet `proxy.`, et une copie
+  détachée fige le code à la version copiée — les correctifs suivants n'ont
+  alors aucun effet ;
+- **`--port 4000`** : sans lui, uvicorn écoute sur 8000 et Codex ne trouve
+  personne.
 
 LiteLLM (port 4001) n'a pas à être démarré séparément : le proxy le lance s'il
 n'écoute pas déjà, et n'arrête à la fermeture que le processus qu'il a
-lui-même lancé. Un `uv run uvicorn proxy.sanitizing_proxy:app --port 4000`
-lancé à la main se comporte donc pareil.
+lui-même lancé. Laisse ce terminal ouvert tant que tu utilises Codex.
 
 ### 3. Configurer Codex CLI
 
@@ -67,7 +67,7 @@ cat codex-config.toml >> ~/.codex/config.toml
 Contenu :
 
 ```toml
-model = "cerebras-gpt-oss-120b"   # ou cerebras-llama-3.3-70b / cerebras-qwen3-32b
+model = "cerebras-gpt-oss-120b"   # ou cerebras-zai-glm-4.7 / openrouter-free-review
 model_provider = "cerebras-local"
 model_reasoning_effort = "medium" # gpt-oss-120b n'accepte que low|medium|high
 
@@ -88,9 +88,10 @@ enabled = false
   4001 (LiteLLM interne) — sinon tu perds tout l'assainissement du JSON.
 - `env_key` doit correspondre à une variable d'environnement définie dans
   ton shell (voir ci-dessous), pas à la clé Cerebras elle-même.
-- Pour changer de modèle, change `model` pour un des trois alias définis
-  dans `litellm_cerebras_config.yaml` — pas un nom de modèle Cerebras brut
+- Pour changer de modèle, change `model` pour un des alias définis dans
+  `litellm_cerebras_config.yaml` — pas un nom de modèle Cerebras brut
   (`gpt-oss-120b` seul ne fonctionnera pas, il faut le préfixe `cerebras-`).
+  `cerebras-review` est réservé à l'auto-review, ne le mets pas ici.
 - Si tu utilises déjà les connecteurs Apps de Codex (Slack, Notion...),
   retire le bloc `[apps._default]` — sinon garde-le pour éviter le
   blocage au démarrage documenté dans "Problèmes résolus" (#6).
@@ -150,7 +151,7 @@ brut avant/après assainissement :
 
 ```bash
 export CEREBRAS_PROXY_DEBUG=1
-./proxy/start_cerebras_proxy.sh
+uv run uvicorn proxy.sanitizing_proxy:app --port 4000
 ```
 
 Le JSON de chaque requête `/v1/responses` est alors écrit dans
