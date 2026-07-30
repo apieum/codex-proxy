@@ -66,3 +66,27 @@ def test_shell_chaining_is_escalated() -> None:
     SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
 
     assert outcome.verdict == "escalate"
+
+
+def test_destructive_prefix_is_denied() -> None:
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "rm -rf /home/user/workspace"]}
+
+    SafeCommandRules(
+        safe_prefixes=(("git", "add"),),
+        denied_prefixes=(("rm", "-rf"),),
+    ).evaluate(action, outcome)
+
+    assert outcome.verdict == "deny"
+
+
+def test_denied_prefix_wins_over_safe_prefix() -> None:
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "git push --force"]}
+
+    SafeCommandRules(
+        safe_prefixes=(("git",),),
+        denied_prefixes=(("git", "push"),),
+    ).evaluate(action, outcome)
+
+    assert outcome.verdict == "deny"
