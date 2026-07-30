@@ -59,7 +59,12 @@ async def _litellm_is_listening() -> bool:
 
 def _litellm_executable() -> str:
     """`litellm` is a console script: `python -m litellm` does not exist."""
-    return console_script("litellm", search_path=shutil.which, interpreter=sys.executable)
+    return console_script(
+        "litellm",
+        search_path=shutil.which,
+        interpreter=sys.executable,
+        override=os.environ.get("LITELLM_EXECUTABLE"),
+    )
 
 
 async def _spawn_litellm() -> StoppableProcess:

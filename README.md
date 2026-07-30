@@ -94,6 +94,19 @@ Two things this command gets right, and that are easy to get wrong:
 
 Leave that terminal open while you use Codex.
 
+The proxy locates the `litellm` console script in this order: the
+`LITELLM_EXECUTABLE` environment variable, then the `PATH`, then the directory
+holding the running interpreter. Set the variable only when several installs
+coexist and the `PATH` picks the wrong one:
+
+```bash
+export LITELLM_EXECUTABLE="$HOME/.local/bin/litellm"
+```
+
+If LiteLLM cannot be started at all, the proxy says so and keeps running:
+requests then answer 502 naming the missing upstream, rather than the proxy
+exiting on you.
+
 ### 3. Configure Codex CLI
 
 A ready-made file is provided: **`proxy/codex-config.toml`**. Copy its content
