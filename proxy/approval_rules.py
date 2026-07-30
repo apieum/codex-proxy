@@ -10,6 +10,11 @@ from typing import Protocol
 
 from proxy.json_types import JSONDict
 
+# Opérateurs de contrôle du shell : un préfixe sûr ne garantit plus rien dès
+# qu'ils apparaissent, puisqu'ils permettent d'enchaîner, de substituer ou de
+# rediriger vers une commande arbitraire.
+SHELL_CONTROL_CHARACTERS = frozenset(";&|`$()<>\n\r")
+
 
 class ApprovalOutcome(Protocol):
     def allow(self) -> None: ...
@@ -20,17 +25,23 @@ class SafeCommandRules:
         self._safe_prefixes = safe_prefixes
 
     def evaluate(self, action: JSONDict, outcome: ApprovalOutcome) -> None:
-        words = self._shell_words(action)
+        shell_command = self._shell_command(action)
+        if _chains_other_commands(shell_command):
+            return
+
+        words = shell_command.split()
         for prefix in self._safe_prefixes:
             if words[: len(prefix)] == list(prefix):
                 outcome.allow()
                 return
 
-    def _shell_words(self, action: JSONDict) -> list[str]:
+    def _shell_command(self, action: JSONDict) -> str:
         command = action.get("command")
         if not isinstance(command, list) or not command:
-            return []
+            return ""
         shell_command = command[-1]
-        if not isinstance(shell_command, str):
-            return []
-        return shell_command.split()
+        return shell_command if isinstance(shell_command, str) else ""
+
+
+def _chains_other_commands(shell_command: str) -> bool:
+    return bool(SHELL_CONTROL_CHARACTERS & set(shell_command))
