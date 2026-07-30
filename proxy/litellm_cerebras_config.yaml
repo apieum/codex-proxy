@@ -69,7 +69,6 @@ router_settings:
 # (ex: parallel_tool_calls, envoyé par défaut par Codex via l'API Responses)
 litellm_settings:
   drop_params: true
-  callbacks: custom_handler.proxy_handler_instance
 
 # Clé que Codex devra présenter au proxy local (n'importe quelle valeur, sert juste d'auth locale)
 general_settings:

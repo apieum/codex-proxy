@@ -25,6 +25,9 @@ requête *avant* qu'elle n'atteigne LiteLLM.
 | `litellm_cerebras_config.yaml` | Config LiteLLM : modèles Cerebras exposés, clé API, filtrage de paramètres |
 | `custom_handler.py` | Fonction `sanitize_body()` : nettoie le JSON Responses API (voir "Problèmes résolus") |
 | `sanitizing_proxy.py` | Reverse-proxy FastAPI (port 4000) qui applique `sanitize_body()` avant de relayer à LiteLLM (port 4001) |
+| `approval_rules.py` / `approval_rules.json` | Pré-filtre déterministe des actions soumises à l'auto-review (liste noire, puis liste blanche) |
+| `guardian.py` | Tranche localement les requêtes `codex-auto-review` que le pré-filtre décide avec certitude |
+| `codex_sse.py` | Fabrique le flux SSE Responses attendu par Codex pour un verdict local |
 | `codex-config.toml` | Config à copier dans `~/.codex/config.toml` pour pointer Codex sur ce proxy |
 
 ## Installation
@@ -34,21 +37,19 @@ requête *avant* qu'elle n'atteigne LiteLLM.
 - Une clé API Cerebras (gratuite ou payante) depuis [cloud.cerebras.ai](https://cloud.cerebras.ai)
 - Codex CLI installé
 
-### 2. Placer les 4 fichiers dans un dossier dédié
-```bash
-mkdir -p ~/cerebras_proxy && cd ~/cerebras_proxy
-# copier start_cerebras_proxy.sh, litellm_cerebras_config.yaml, custom_handler.py, sanitizing_proxy.py ici
-chmod +x start_cerebras_proxy.sh
-```
-
-### 3. Lancer le proxy
+### 2. Lancer le proxy depuis le dépôt
 ```bash
 export CEREBRAS_API_KEY="ta_clé_cerebras"
-./start_cerebras_proxy.sh
+./proxy/start_cerebras_proxy.sh
 ```
+
+Le script se lance **depuis la racine du dépôt**, jamais depuis une copie des
+fichiers : `sanitizing_proxy` importe ses modules via le paquet `proxy.`, et
+une copie détachée fige silencieusement le code à la version copiée — les
+correctifs suivants n'ont alors aucun effet.
 Laisse ce terminal ouvert tant que tu utilises Codex avec Cerebras.
 
-### 4. Configurer Codex CLI
+### 3. Configurer Codex CLI
 
 Un fichier prêt à l'emploi est fourni : **`codex-config.toml`**. Copie son
 contenu dans `~/.codex/config.toml` (fusionne-le si tu as déjà des réglages
@@ -94,7 +95,7 @@ Et dans ton shell (à ajouter dans `~/.bashrc`/`~/.zshrc` pour que ce soit perma
 export LITELLM_MASTER_KEY="sk-local-proxy-1234"   # doit matcher master_key dans le yaml
 ```
 
-### 5. Lancer Codex normalement
+### 4. Lancer Codex normalement
 ```bash
 codex
 ```
@@ -144,7 +145,7 @@ brut avant/après assainissement :
 
 ```bash
 export CEREBRAS_PROXY_DEBUG=1
-./start_cerebras_proxy.sh
+./proxy/start_cerebras_proxy.sh
 ```
 
 Le JSON de chaque requête `/v1/responses` est alors écrit dans

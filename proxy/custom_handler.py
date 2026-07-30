@@ -1,14 +1,8 @@
 """
 Logique d'assainissement des requêtes Responses API avant transmission à
-Cerebras. Exposée en fonction pure `sanitize_body()` pour être réutilisable
-à la fois par le hook LiteLLM (chat/completions) et par notre reverse-proxy
-maison (qui couvre /v1/responses, non couvert par les hooks LiteLLM).
+Cerebras, appliquée par notre reverse-proxy maison : les hooks LiteLLM ne
+couvrent pas /v1/responses, le seul endpoint que Codex utilise.
 """
-from typing import Any
-
-from litellm.caching.dual_cache import DualCache
-from litellm.integrations.custom_logger import CustomLogger
-
 from proxy.json_types import JSONDict, JSONValue
 
 FIELDS_TO_STRIP = [
@@ -173,23 +167,3 @@ def sanitize_body(data: JSONValue) -> JSONValue:
         data["input"] = _clean_orphan_tool_calls(data["input"])
 
     return data
-
-
-class CerebrasSanitizer(CustomLogger):
-    """
-    Conservé pour /chat/completions, /embeddings, /image/generation — les
-    seuls endpoints réellement couverts par ce hook LiteLLM. Inoffensif à
-    laisser branché même si Codex n'y passe pas.
-    """
-    async def async_pre_call_hook(
-        self,
-        user_api_key_dict: Any,  # signature imposée par litellm.CustomLogger, non typée en amont
-        cache: DualCache,
-        data: JSONDict,
-        call_type: str,
-    ) -> JSONDict | None:
-        result = sanitize_body(data)
-        return result if isinstance(result, dict) else None
-
-
-proxy_handler_instance = CerebrasSanitizer()
