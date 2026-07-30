@@ -181,12 +181,28 @@ ci-dessous.
 | `response.custom_tool_call_input.delta` | `delta`, `item_id`, `call_id` |
 | `response.failed` | `response.error` : `code`, `message`, `plan_type`, `resets_at` |
 | `response.incomplete` | `response.incomplete_details.reason` |
-| `response.completed` | `response` : `id`, `usage`, `end_turn` |
+| `response.completed` | `response` : `id`, `usage` (complet, cf. ci-dessous), `end_turn` |
 
 **Règle dure : `response.completed` est obligatoire.** Si le flux se referme
 sans lui, Codex échoue avec `stream closed before response.completed` — erreur
 fatale, pas dégradation silencieuse. Tous les autres événements sont
 facultatifs : les `delta` ne servent qu'à l'affichage progressif.
+
+**Règle dure n°2 : `usage` doit porter les cinq champs de `TokenUsage`** —
+`input_tokens`, `cached_input_tokens`, `output_tokens`,
+`reasoning_output_tokens`, `total_tokens`. Ils ne sont pas optionnels côté
+Codex : un `"usage":{}` fait échouer la désérialisation de l'événement, donc
+le flux entier, sur
+
+```
+stream disconnected before completion: failed to parse ResponseCompleted:
+missing field `input_tokens`
+```
+
+Constaté en conditions réelles le 2026-07-30 (une version antérieure de cette
+section prescrivait `"usage":{}`, ce qui rendait tout verdict local
+inexploitable). Noms de champs vérifiés dans la table de chaînes du binaire
+`codex` installé, pas déduits.
 
 **Conséquence directe pour le Guardian local** : fabriquer une réponse valide
 ne demande que deux événements, le verdict étant porté par l'item de message.
@@ -196,7 +212,7 @@ data: {"type":"response.created","response":{"id":"resp_local_1"}}
 
 data: {"type":"response.output_item.done","item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"{\"outcome\":\"allow\"}"}]}}
 
-data: {"type":"response.completed","response":{"id":"resp_local_1","usage":{},"end_turn":true}}
+data: {"type":"response.completed","response":{"id":"resp_local_1","usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0,"total_tokens":0},"end_turn":true}}
 ```
 
 Codex applique par ailleurs un **délai d'inactivité** sur le flux
