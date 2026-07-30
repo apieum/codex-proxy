@@ -17,12 +17,15 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncGenerator, AsyncIterator
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 
+from proxy.approval_rules import SafeCommandRules
 from proxy.custom_handler import sanitize_body
+from proxy.guardian import GUARDIAN_MODEL, local_review
 from proxy.json_types import JSONValue
 from proxy.local_compactor import compact_old_tool_outputs
 
@@ -32,6 +35,21 @@ DEBUG_ENABLED = os.environ.get("CEREBRAS_PROXY_DEBUG", "").lower() in ("1", "tru
 
 app = FastAPI()
 client = httpx.AsyncClient(timeout=None)
+
+
+def _load_approval_rules() -> SafeCommandRules:
+    """Charge les règles du pré-filtre ; sans fichier, aucune approbation locale."""
+    try:
+        config = json.loads(Path(__file__).with_name("approval_rules.json").read_text("utf-8"))
+    except (OSError, ValueError) as exc:
+        print(f"[sanitizing_proxy] règles d'approbation illisibles, pré-filtre inactif : {exc}")
+        return SafeCommandRules(safe_prefixes=())
+    if not isinstance(config, dict):
+        return SafeCommandRules(safe_prefixes=())
+    return SafeCommandRules.from_config(config)
+
+
+APPROVAL_RULES = _load_approval_rules()
 
 
 def _append_debug_log(text: str) -> None:
@@ -61,6 +79,15 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
     if request.method == "POST" and path == "v1/responses" and body:
         try:
             data: JSONValue = json.loads(body)
+
+            # Le Guardian de Codex est tranché localement quand les règles le
+            # permettent : réponse immédiate, sans appel réseau ni modèle.
+            if isinstance(data, dict) and data.get("model") == GUARDIAN_MODEL:
+                verdict_stream = local_review(data, APPROVAL_RULES)
+                if verdict_stream is not None:
+                    _debug_log("VERDICT LOCAL (auto-review)", data)
+                    return StreamingResponse(verdict_stream, media_type="text/event-stream")
+
             _debug_log("AVANT sanitize_body", data)
             data = sanitize_body(data)
             data = await compact_old_tool_outputs(data)

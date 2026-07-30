@@ -1,0 +1,35 @@
+{
+  "_commentaire": "Règles du pré-filtre d'approbation. La liste noire l'emporte toujours sur la liste blanche. Toute commande contenant un enchaînement shell (; && || | ` $() < >) est escaladée quoi qu'il arrive.",
+
+  "denied_prefixes": [
+    ["rm", "-rf"],
+    ["sudo"],
+    ["chmod", "777"],
+    ["mkfs"],
+    ["shutdown"],
+    ["reboot"]
+  ],
+
+  "safe_prefixes": [
+    ["git", "status"],
+    ["git", "diff"],
+    ["git", "log"],
+    ["git", "show"],
+    ["git", "add"],
+    ["ls"],
+    ["pwd"],
+    ["cat"],
+    ["head"],
+    ["tail"],
+    ["wc"],
+    ["file"],
+    ["stat"],
+    ["which"],
+    ["grep"],
+    ["rg"],
+    ["find"],
+    ["uv", "run", "pytest"],
+    ["uv", "run", "ruff"],
+    ["uv", "run", "mypy"]
+  ]
+}
