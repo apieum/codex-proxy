@@ -80,6 +80,26 @@ def test_destructive_prefix_is_denied() -> None:
     assert outcome.verdict == "deny"
 
 
+def test_configured_safe_prefix_is_applied() -> None:
+    outcome = OutcomeSpy()
+    config: JSONDict = {"safe_prefixes": [["git", "add"]]}
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "git add fichier"]}
+
+    SafeCommandRules.from_config(config).evaluate(action, outcome)
+
+    assert outcome.verdict == "allow"
+
+
+def test_configured_denied_prefix_is_applied() -> None:
+    outcome = OutcomeSpy()
+    config: JSONDict = {"denied_prefixes": [["rm", "-rf"]]}
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "rm -rf /"]}
+
+    SafeCommandRules.from_config(config).evaluate(action, outcome)
+
+    assert outcome.verdict == "deny"
+
+
 def test_denied_prefix_wins_over_safe_prefix() -> None:
     outcome = OutcomeSpy()
     action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "git push --force"]}

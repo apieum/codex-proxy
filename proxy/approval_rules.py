@@ -10,9 +10,9 @@ L'ordre d'évaluation est une propriété de sécurité : la liste noire passe a
 la liste blanche, jamais l'inverse.
 """
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Protocol, Self
 
-from proxy.json_types import JSONDict
+from proxy.json_types import JSONDict, JSONValue
 
 # Opérateurs de contrôle du shell : un préfixe sûr ne garantit plus rien dès
 # qu'ils apparaissent, puisqu'ils permettent d'enchaîner, de substituer ou de
@@ -34,6 +34,13 @@ class SafeCommandRules:
     ) -> None:
         self._safe_prefixes = safe_prefixes
         self._denied_prefixes = denied_prefixes
+
+    @classmethod
+    def from_config(cls, config: JSONDict) -> Self:
+        return cls(
+            safe_prefixes=_configured_prefixes(config.get("safe_prefixes")),
+            denied_prefixes=_configured_prefixes(config.get("denied_prefixes")),
+        )
 
     def evaluate(self, action: JSONDict, outcome: ApprovalOutcome) -> None:
         shell_command = self._shell_command(action)
@@ -61,6 +68,19 @@ class SafeCommandRules:
             return ""
         shell_command = command[-1]
         return shell_command if isinstance(shell_command, str) else ""
+
+
+def _configured_prefixes(value: JSONValue) -> tuple[tuple[str, ...], ...]:
+    if not isinstance(value, list):
+        return ()
+
+    prefixes = []
+    for entry in value:
+        if isinstance(entry, list):
+            words = tuple(word for word in entry if isinstance(word, str))
+            if words:
+                prefixes.append(words)
+    return tuple(prefixes)
 
 
 def _matching_prefix(
