@@ -98,6 +98,26 @@ requête via un petit modèle local au lieu de la relayer vers Cerebras.
    règles sont de la config, pas du code en dur. Un cas non couvert par les
    règles ET par un verdict LLM dans le délai imparti → erreur remontée
    (= refus d'auto-approbation côté Codex, voir invariant).
+
+   **Décision (2026-07-30) — liste noire ET liste blanche, combinables.**
+   Le proxy tourne en local, sur la machine de l'utilisateur : la liste noire
+   est donc un choix acceptable, là où elle serait insuffisante pour un
+   service exposé. Les deux mécanismes coexistent et sont configurables :
+
+   | Niveau | Liste noire | Liste blanche |
+   |---|---|---|
+   | Caractères | métacaractères shell rejetés (défaut, permissif) | jeu de caractères autorisés, tout le reste rejeté (mode strict, optionnel) |
+   | Commandes | motifs destructeurs → jamais approuvés | préfixes sûrs → approuvés immédiatement |
+
+   **L'ordre d'évaluation est une propriété de sécurité, pas une préférence :**
+   1. liste noire (caractères, puis motifs) — un refus l'emporte toujours ;
+   2. liste blanche de préfixes — approbation immédiate ;
+   3. sinon, zone grise → `escalate` vers le modèle local.
+
+   Une liste blanche ne doit **jamais** pouvoir annuler une entrée de liste
+   noire. Inverser ces deux étapes recréerait exactement la faille corrigée
+   par le rejet des enchaînements shell : un préfixe sûr suivi d'une commande
+   arbitraire.
 4. **M1.4 — Contraindre la sortie.** Le verdict doit être parsable à tous
    les coups : sortie structurée (format JSON schema d'Ollama, ou grammaire
    GBNF de llama.cpp) conforme à `codex_output_schema` (voir
