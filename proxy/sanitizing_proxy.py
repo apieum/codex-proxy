@@ -27,7 +27,6 @@ from proxy.approval_rules import SafeCommandRules
 from proxy.custom_handler import sanitize_body
 from proxy.guardian import GUARDIAN_MODEL, local_review
 from proxy.json_types import JSONValue
-from proxy.local_compactor import compact_old_tool_outputs
 
 LITELLM_UPSTREAM = "http://127.0.0.1:4001"
 DEBUG_LOG_PATH = "/tmp/cerebras_proxy_debug.log"
@@ -90,8 +89,7 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
 
             _debug_log("AVANT sanitize_body", data)
             data = sanitize_body(data)
-            data = await compact_old_tool_outputs(data)
-            _debug_log("APRES sanitize_body + compaction", data)
+            _debug_log("APRES sanitize_body", data)
             body = json.dumps(data).encode()
         except (ValueError, TypeError, KeyError) as exc:
             print(f"[sanitizing_proxy] échec du parsing/assainissement, requête transmise telle quelle: {exc}")

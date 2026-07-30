@@ -7,12 +7,12 @@ set -euo pipefail
 #   - reasoning_effort valides : low | medium | high (PAS "none")
 #   - $0.35 / M tokens en entrée, $0.75 / M tokens en sortie
 
-# --- Vérifie qu'Ollama tourne (nécessaire pour codex-auto-review + compaction locale) ---
+# --- Vérifie qu'Ollama tourne (nécessaire pour l'escalade de codex-auto-review) ---
 if ! curl -s -o /dev/null "http://localhost:11434/api/tags"; then
   echo "⚠ Ollama ne répond pas sur localhost:11434."
   echo "  Lance-le d'abord : ollama serve"
   echo "  Et vérifie que le modèle est bien pull : ollama pull hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF"
-  echo "  On continue quand même (fail-open : compaction et auto-review se dégraderont silencieusement)."
+  echo "  Sans lui, toute action hors pré-filtre retombera sur l'approbation manuelle."
 fi
 if [[ -z "${CEREBRAS_API_KEY:-}" ]]; then
   echo "Erreur : variable CEREBRAS_API_KEY non définie."
@@ -60,6 +60,6 @@ done
 
 echo "Démarrage du proxy assainisseur sur http://localhost:4000 (celui que Codex doit utiliser) ..."
 # Lancé depuis REPO_ROOT (pas SCRIPT_DIR) pour que `proxy` soit résoluble comme
-# paquet Python -- sanitizing_proxy.py importe désormais via `proxy.custom_handler`
-# / `proxy.local_compactor` plutôt qu'en imports plats.
+# paquet Python -- sanitizing_proxy.py importe via `proxy.custom_handler`
+# plutôt qu'en imports plats.
 uv run --python "$VENV_DIR/bin/python" uvicorn proxy.sanitizing_proxy:app --host 0.0.0.0 --port 4000

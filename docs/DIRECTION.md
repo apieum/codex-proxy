@@ -27,7 +27,7 @@ Architecture actuelle (fonctionnelle, à préserver) :
 
 ```
 Codex CLI ──:4000──> proxy/sanitizing_proxy.py ──:4001──> LiteLLM ──> Cerebras
-                     (assainissement + compaction)        (bridge Responses→ChatCompletions)
+                     (assainissement + pré-filtre)        (bridge Responses→ChatCompletions)
 ```
 
 Architecture cible :
@@ -139,8 +139,7 @@ Directives qui en découlent :
 - **Serveur résident obligatoire** (llama-server ou Ollama avec
   `keep_alive`), jamais un lancement de CLI par requête, et cache de prompt
   activé pour amortir le préfixe fixe.
-- Préférer **`LFM2.5-1.2B-Instruct`** (non-thinking, déjà utilisé par
-  `local_compactor.py`). La variante Thinking testée par l'utilisateur
+- Préférer **`LFM2.5-1.2B-Instruct`** (non-thinking). La variante Thinking testée par l'utilisateur
   génère trop de tokens de raisonnement : à ~6 tok/s, chaque token de
   réflexion coûte 164 ms — proscrite pour ce service.
 - Objectif de latence de bout en bout pour un verdict : **< 30 s** dans la
@@ -152,8 +151,7 @@ Directives qui en découlent :
 **Invariant de sécurité (non négociable).** En cas d'échec du modèle local
 (Ollama éteint, timeout, sortie non parsable), le service auto-review doit
 **échouer vers le refus d'auto-approbation** (Codex redemande à l'humain).
-JAMAIS de fail-open qui approuverait une commande par défaut. C'est l'inverse
-de la philosophie fail-open du compacteur — et c'est voulu : une compaction
+JAMAIS de fail-open qui approuverait une commande par défaut : une compaction
 ratée coûte des tokens, une approbation ratée exécute une commande dangereuse.
 
 ### P2 — Routeur multi-provider (Cerebras + OpenRouter)
@@ -167,12 +165,16 @@ ratée coûte des tokens, une approbation ratée exécute une commande dangereus
 - Prévoir (plus tard, pas tout de suite) : fallback si un provider est down,
   et comptage tokens/coût par provider dans un log local.
 
-### P3 — Optimisation locale du contexte (étend l'existant)
+### P3 — Optimisation locale du contexte (à reprendre de zéro)
 
-`proxy/local_compactor.py` fait déjà : résumé des vieux `function_call_output`
-volumineux (> 1000 chars), sauf le dernier, via Ollama, fail-open.
+Une première version (`proxy/local_compactor.py`, retirée le 2026-07-30)
+résumait les vieux `function_call_output` volumineux via Ollama, fail-open.
+Retirée parce qu'elle plaçait **un appel HTTP séquentiel par output, timeout
+15 s chacun, sur le chemin critique de chaque requête** — pour un résultat nul
+dès qu'Ollama ne répond pas, seules les traces d'échec restant visibles. Toute
+reprise doit être asynchrone ou mise en cache, jamais bloquante.
 
-Extensions par ordre de rendement décroissant :
+Pistes par ordre de rendement décroissant :
 1. **Cache des résumés** : Codex renvoie tout l'historique à CHAQUE tour, donc
    le même output est re-résumé à chaque requête → gaspillage local. Mettre en
    cache (clé = hash du contenu original) le résumé déjà produit.
