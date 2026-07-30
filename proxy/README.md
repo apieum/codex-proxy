@@ -21,7 +21,7 @@ requête *avant* qu'elle n'atteigne LiteLLM.
 
 | Fichier | Rôle |
 |---|---|
-| `start_cerebras_proxy.sh` | Installe les dépendances (via `uv`) et démarre les deux proxys |
+| `start_cerebras_proxy.sh` | Démarre le proxy (qui lance LiteLLM lui-même s'il n'écoute pas déjà) |
 | `litellm_cerebras_config.yaml` | Config LiteLLM : modèles Cerebras exposés, clé API, filtrage de paramètres |
 | `custom_handler.py` | Fonction `sanitize_body()` : nettoie le JSON Responses API (voir "Problèmes résolus") |
 | `sanitizing_proxy.py` | Reverse-proxy FastAPI (port 4000) qui applique `sanitize_body()` avant de relayer à LiteLLM (port 4001) |
@@ -48,6 +48,11 @@ fichiers : `sanitizing_proxy` importe ses modules via le paquet `proxy.`, et
 une copie détachée fige silencieusement le code à la version copiée — les
 correctifs suivants n'ont alors aucun effet.
 Laisse ce terminal ouvert tant que tu utilises Codex avec Cerebras.
+
+LiteLLM (port 4001) n'a pas à être démarré séparément : le proxy le lance s'il
+n'écoute pas déjà, et n'arrête à la fermeture que le processus qu'il a
+lui-même lancé. Un `uv run uvicorn proxy.sanitizing_proxy:app --port 4000`
+lancé à la main se comporte donc pareil.
 
 ### 3. Configurer Codex CLI
 
