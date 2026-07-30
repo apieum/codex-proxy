@@ -213,3 +213,7 @@ Two conventions worth knowing before contributing:
   rather than returning a value for the caller to branch on.
 - **Comments explain why, not what.** Most comments in this codebase record a
   measurement or a decision that is not visible in the code.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -3,6 +3,8 @@ name = "codex-proxy"
 version = "0.1.0"
 description = "A local proxy that lets Codex CLI run on non-OpenAI backends, with a deterministic pre-filter for its auto-approval reviews."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
