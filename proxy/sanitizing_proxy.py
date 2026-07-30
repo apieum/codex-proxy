@@ -26,6 +26,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 
 from proxy.approval_rules import SafeCommandRules
+from proxy.credentials import RequiredCredentials
 from proxy.custom_handler import sanitize_body
 from proxy.guardian import GUARDIAN_MODEL, compact_review_request, local_review
 from proxy.json_types import JSONValue
@@ -34,6 +35,7 @@ from proxy.upstream_supervisor import StoppableProcess, UpstreamSupervisor
 LITELLM_UPSTREAM = "http://127.0.0.1:4001"
 LITELLM_CONFIG_PATH = Path(__file__).with_name("litellm_cerebras_config.yaml")
 LITELLM_STARTUP_TIMEOUT_SECONDS = 60
+BACKEND_CREDENTIALS = RequiredCredentials(("CEREBRAS_API_KEY",))
 DEBUG_LOG_PATH = "/tmp/cerebras_proxy_debug.log"
 DEBUG_ENABLED = os.environ.get("CEREBRAS_PROXY_DEBUG", "").lower() in ("1", "true", "yes")
 
@@ -76,6 +78,7 @@ async def _await_litellm() -> None:
 
 @asynccontextmanager
 async def _managed_upstream(app: FastAPI) -> AsyncGenerator[None, None]:
+    BACKEND_CREDENTIALS.report_missing(os.environ, _report)
     supervisor = UpstreamSupervisor(is_listening=_litellm_is_listening, spawn=_spawn_litellm)
     await supervisor.ensure_available()
     await _await_litellm()
