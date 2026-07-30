@@ -34,11 +34,31 @@ class SpawnSpy:
         return self.process
 
 
-def _supervisor(*, already_listening: bool, spawn: SpawnSpy) -> UpstreamSupervisor:
+class ReportSpy:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def __call__(self, message: str) -> None:
+        self.messages.append(message)
+
+
+class UnspawnableUpstream:
+    """Stands in for an executable that is not on this machine."""
+
+    async def __call__(self) -> ProcessSpy:
+        raise FileNotFoundError(2, "No such file or directory")
+
+
+def _supervisor(
+    *,
+    already_listening: bool,
+    spawn: SpawnSpy | UnspawnableUpstream,
+    report: ReportSpy | None = None,
+) -> UpstreamSupervisor:
     async def probe() -> bool:
         return already_listening
 
-    return UpstreamSupervisor(is_listening=probe, spawn=spawn)
+    return UpstreamSupervisor(is_listening=probe, spawn=spawn, report=report or ReportSpy())
 
 
 @pytest.fixture
@@ -85,3 +105,20 @@ async def test_an_upstream_it_did_not_start_survives_shutdown() -> None:
     await supervisor.release()
 
     assert spawn.process.stopped is False
+
+
+@pytest.mark.anyio
+async def test_an_upstream_that_cannot_be_started_does_not_abort_startup() -> None:
+    """A proxy that exits helps nobody: requests answer 502 and name the cause."""
+    await _supervisor(already_listening=False, spawn=UnspawnableUpstream()).ensure_available()
+
+
+@pytest.mark.anyio
+async def test_an_upstream_that_cannot_be_started_is_reported() -> None:
+    report = ReportSpy()
+
+    await _supervisor(
+        already_listening=False, spawn=UnspawnableUpstream(), report=report
+    ).ensure_available()
+
+    assert "LiteLLM" in report.messages[0]

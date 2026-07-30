@@ -16,6 +16,7 @@ else (GET /v1/models, etc.) is passed straight through.
 import asyncio
 import json
 import os
+import shutil
 import sys
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
@@ -27,6 +28,7 @@ from fastapi.responses import StreamingResponse
 
 from proxy.approval_rules import SafeCommandRules
 from proxy.credentials import RequiredCredentials
+from proxy.executable_lookup import console_script
 from proxy.guardian import GUARDIAN_MODEL, compact_review_request, local_review
 from proxy.json_types import JSONValue
 from proxy.request_sanitizer import sanitize_body
@@ -57,7 +59,7 @@ async def _litellm_is_listening() -> bool:
 
 def _litellm_executable() -> str:
     """`litellm` is a console script: `python -m litellm` does not exist."""
-    return str(Path(sys.executable).with_name("litellm"))
+    return console_script("litellm", search_path=shutil.which, interpreter=sys.executable)
 
 
 async def _spawn_litellm() -> StoppableProcess:
@@ -79,7 +81,9 @@ async def _await_litellm() -> None:
 @asynccontextmanager
 async def _managed_upstream(app: FastAPI) -> AsyncGenerator[None, None]:
     BACKEND_CREDENTIALS.report_missing(os.environ, _report)
-    supervisor = UpstreamSupervisor(is_listening=_litellm_is_listening, spawn=_spawn_litellm)
+    supervisor = UpstreamSupervisor(
+        is_listening=_litellm_is_listening, spawn=_spawn_litellm, report=_report
+    )
     await supervisor.ensure_available()
     await _await_litellm()
     try:
