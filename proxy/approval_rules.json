@@ -1,5 +1,5 @@
 {
-  "_commentaire": "Règles du pré-filtre d'approbation. La liste noire l'emporte toujours sur la liste blanche. Toute commande contenant un enchaînement shell (; && || | ` $() < >) est escaladée quoi qu'il arrive.",
+  "_commentaire": "Règles du pré-filtre d'approbation. La liste noire l'emporte toujours sur la liste blanche. Sont escaladées quoi qu'il arrive : les enchaînements shell (; && || | ` $() < >) et les options de forçage (--force, -f). `git -C <dir>` est neutralisé avant comparaison (même commande, autre répertoire) ; `git -c <clé>=<valeur>` ne l'est pas, il exécute du code.",
 
   "denied_prefixes": [
     ["rm", "-rf"],
