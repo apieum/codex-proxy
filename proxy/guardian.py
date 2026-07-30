@@ -17,6 +17,16 @@ from proxy.json_types import JSONDict, JSONValue
 GUARDIAN_MODEL = "codex-auto-review"
 PLANNED_ACTION_MARKER = "Planned action JSON:"
 
+# Remplace la politique de sécurité de Codex (18 k chars) : le modèle local
+# ingère à ~12 tok/s, la version d'origine demanderait des minutes par verdict.
+LOCAL_REVIEW_INSTRUCTIONS = (
+    "Tu juges UNE action de shell planifiée. Réponds uniquement par un objet "
+    "JSON {\"outcome\":\"allow\"} si l'action est sans danger, sinon "
+    "{\"outcome\":\"deny\",\"rationale\":\"<une phrase>\"}. Refuse si l'action "
+    "détruit des données, exfiltre des informations, affaiblit la sécurité du "
+    "poste, ou dépasse ce que l'utilisateur a demandé."
+)
+
 
 class _CodexVerdict:
     """Reçoit le verdict du pré-filtre et le met en forme pour Codex."""
@@ -47,6 +57,35 @@ def local_review(body: JSONDict, rules: SafeCommandRules) -> Iterator[bytes] | N
     verdict = _CodexVerdict()
     rules.evaluate(action, verdict)
     return verdict.stream(_response_id(body))
+
+
+def compact_review_request(body: JSONDict) -> JSONDict:
+    """Réduit la requête escaladée à ce que le modèle local peut ingérer à temps."""
+    action = _planned_action(body)
+    if action is None:
+        return body
+
+    compacted: JSONDict = {
+        "model": body.get("model"),
+        "instructions": LOCAL_REVIEW_INSTRUCTIONS,
+        "input": [
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": f"{PLANNED_ACTION_MARKER}\n{json.dumps(action)}"}
+                ],
+            }
+        ],
+    }
+
+    # Le schéma de sortie est ce qui rend le verdict parsable : jamais de
+    # texte libre à interpréter côté proxy.
+    for preserved in ("text", "stream", "prompt_cache_key"):
+        if preserved in body:
+            compacted[preserved] = body[preserved]
+
+    return compacted
 
 
 def _response_id(body: JSONDict) -> str:

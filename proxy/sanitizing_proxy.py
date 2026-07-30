@@ -25,7 +25,7 @@ from fastapi.responses import StreamingResponse
 
 from proxy.approval_rules import SafeCommandRules
 from proxy.custom_handler import sanitize_body
-from proxy.guardian import GUARDIAN_MODEL, local_review
+from proxy.guardian import GUARDIAN_MODEL, compact_review_request, local_review
 from proxy.json_types import JSONValue
 
 LITELLM_UPSTREAM = "http://127.0.0.1:4001"
@@ -97,6 +97,11 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
                 if verdict_stream is not None:
                     _debug_log("VERDICT LOCAL (auto-review)", data)
                     return StreamingResponse(verdict_stream, media_type="text/event-stream")
+
+                # Zone grise : le modèle local tranche, mais seulement s'il
+                # reçoit un prompt qu'il peut ingérer avant le timeout.
+                data = compact_review_request(data)
+                _debug_log("ESCALADE (requete reduite)", data)
 
             _debug_log("AVANT sanitize_body", data)
             data = sanitize_body(data)
