@@ -51,6 +51,17 @@ def _load_approval_rules() -> SafeCommandRules:
 APPROVAL_RULES = _load_approval_rules()
 
 
+def _unreachable_upstream(exc: httpx.TransportError) -> StreamingResponse:
+    """Nomme le service en panne : Codex n'affiche qu'un « high demand » générique."""
+    message = f"LiteLLM injoignable sur {LITELLM_UPSTREAM} : {exc}"
+    print(f"[sanitizing_proxy] {message}")
+    return StreamingResponse(
+        iter([json.dumps({"error": {"message": message, "type": "upstream_unreachable"}}).encode()]),
+        status_code=502,
+        media_type="application/json",
+    )
+
+
 def _append_debug_log(text: str) -> None:
     with open(DEBUG_LOG_PATH, "a") as f:
         f.write(text)
@@ -101,7 +112,10 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
         content=body,
         params=request.query_params,
     )
-    upstream_response = await client.send(upstream_request, stream=True)
+    try:
+        upstream_response = await client.send(upstream_request, stream=True)
+    except httpx.TransportError as exc:
+        return _unreachable_upstream(exc)
 
     if DEBUG_ENABLED and path == "v1/responses":
         async def _tee_and_log() -> AsyncGenerator[bytes, None]:
