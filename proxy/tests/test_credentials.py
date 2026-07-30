@@ -1,15 +1,15 @@
 """
-Signalement des credentials manquants au démarrage.
+Reporting of missing credentials at startup.
 
-Sans `CEREBRAS_API_KEY`, LiteLLM démarre sans rien dire : l'échec ne surgit
-qu'à la première requête, sous forme d'erreur d'authentification opaque
-renvoyée à Codex. Le dire au démarrage évite de chercher la panne ailleurs.
+Without `CEREBRAS_API_KEY`, LiteLLM starts silently: the failure only surfaces
+on the first request, as an opaque authentication error handed back to Codex.
+Saying it at startup saves looking for the fault elsewhere.
 """
 from proxy.credentials import RequiredCredentials
 
 
 class ReportSpy:
-    """Le destinataire à qui les credentials dictent ce qui manque."""
+    """The recipient the credentials dictate what is missing to."""
 
     def __init__(self) -> None:
         self.messages: list[str] = []
@@ -30,14 +30,14 @@ def test_a_present_credential_is_not_reported() -> None:
     report = ReportSpy()
 
     RequiredCredentials(("CEREBRAS_API_KEY",)).report_missing(
-        {"CEREBRAS_API_KEY": "sk-reelle"}, report
+        {"CEREBRAS_API_KEY": "sk-real-key"}, report
     )
 
     assert report.messages == []
 
 
 def test_an_empty_credential_counts_as_missing() -> None:
-    """Une variable exportée à vide passe les contrôles naïfs mais ne s'authentifie pas."""
+    """A variable exported empty passes naive checks but authenticates nothing."""
     report = ReportSpy()
 
     RequiredCredentials(("CEREBRAS_API_KEY",)).report_missing({"CEREBRAS_API_KEY": ""}, report)

@@ -1,10 +1,10 @@
 """
-Démarrage de LiteLLM par le proxy lui-même.
+The proxy starting LiteLLM itself.
 
-Lancer `uvicorn proxy.sanitizing_proxy:app` sans LiteLLM derrière produit une
-502 sur chaque requête : le proxy seul ne sait relayer nulle part. Il prend
-donc en charge le démarrage de son upstream, sans jamais marcher sur un
-LiteLLM que l'utilisateur a déjà lancé lui-même.
+Running `uvicorn proxy.sanitizing_proxy:app` with no LiteLLM behind it answers
+502 to every request: the proxy alone has nowhere to relay. So it takes charge
+of starting its upstream, without ever stepping on a LiteLLM the user started
+themselves.
 """
 import pytest
 
@@ -12,7 +12,7 @@ from proxy.upstream_supervisor import UpstreamSupervisor
 
 
 class ProcessSpy:
-    """Le processus lancé, à qui le superviseur dicte son arrêt."""
+    """The spawned process, which the supervisor tells to stop."""
 
     def __init__(self) -> None:
         self.stopped = False
@@ -77,7 +77,7 @@ async def test_the_process_it_started_is_stopped_on_shutdown() -> None:
 
 @pytest.mark.anyio
 async def test_an_upstream_it_did_not_start_survives_shutdown() -> None:
-    """Tuer le LiteLLM d'un autre couperait le proxy que l'utilisateur pilote."""
+    """Killing someone else's LiteLLM would cut the proxy the user drives."""
     spawn = SpawnSpy()
     supervisor = _supervisor(already_listening=True, spawn=spawn)
     await supervisor.ensure_available()

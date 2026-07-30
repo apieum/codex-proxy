@@ -1,10 +1,10 @@
 """
-Réduction de la requête auto-review avant escalade vers le modèle local.
+Shrinking the auto-review request before escalating it.
 
-Codex envoie ~8 000 tokens (politique de sécurité, AGENTS.md, transcript en
-59 parts). Ingérés à 11,65 tok/s sur le matériel mesuré, cela représente
-~11,5 min avant le premier token — très au-delà du délai d'inactivité de
-Codex. Le budget tenable est de ~300 tokens non cachés, soit ~1 200 caractères.
+Codex sends ~8,000 tokens (security policy, AGENTS.md, a 59-part transcript).
+Ingested at 11.65 tok/s on the measured hardware, that is ~11.5 min before the
+first token -- far past Codex's idle timeout. The workable budget is ~300
+non-cached tokens, i.e. ~1,200 characters.
 """
 import json
 
@@ -16,7 +16,7 @@ LOCAL_PROMPT_BUDGET_CHARS = 1200
 PLANNED_ACTION = {
     "command": ["/usr/bin/zsh", "-lc", "npm publish"],
     "cwd": "/home/user/project",
-    "justification": "Publier la version corrigee",
+    "justification": "Publish the fixed release",
     "tool": "exec_command",
 }
 
@@ -32,7 +32,7 @@ OUTPUT_SCHEMA: JSONDict = {
 def _codex_review_request() -> JSONDict:
     return {
         "model": "codex-auto-review",
-        "instructions": "POLITIQUE DE SECURITE COMPLETE. " * 600,
+        "instructions": "FULL SECURITY POLICY. " * 600,
         "tools": [{"type": "function", "name": "exec_command"}],
         "text": OUTPUT_SCHEMA,
         "input": [
@@ -40,9 +40,9 @@ def _codex_review_request() -> JSONDict:
                 "type": "message",
                 "role": "user",
                 "content": [
-                    {"type": "input_text", "text": "# AGENTS.md instructions " + "bla " * 400},
+                    {"type": "input_text", "text": "# AGENTS.md instructions " + "rule " * 400},
                     {"type": "input_text", "text": ">>> TRANSCRIPT START"},
-                    {"type": "input_text", "text": "[1] tool exec_command result: " + "sortie " * 400},
+                    {"type": "input_text", "text": "[1] tool exec_command result: " + "output " * 400},
                     {"type": "input_text", "text": "Planned action JSON:"},
                     {"type": "input_text", "text": json.dumps(PLANNED_ACTION)},
                     {"type": "input_text", "text": ">>> APPROVAL REQUEST END"},
@@ -77,7 +77,7 @@ def test_compacted_request_keeps_the_output_schema_that_constrains_the_verdict()
 
 
 def test_a_request_without_planned_action_is_left_untouched() -> None:
-    """Sans action à juger, rien ne justifie de réécrire la requête."""
+    """With no action to judge, nothing justifies rewriting the request."""
     unchanged: JSONDict = {"model": "codex-auto-review", "input": []}
 
     assert compact_review_request(unchanged) == unchanged

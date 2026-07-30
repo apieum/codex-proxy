@@ -26,7 +26,7 @@ def _guardian_request(shell_command: str) -> JSONDict:
                 "role": "user",
                 "content": [
                     {"type": "input_text", "text": ">>> TRANSCRIPT START"},
-                    {"type": "input_text", "text": "[1] user: fais le menage"},
+                    {"type": "input_text", "text": "[1] user: clean things up"},
                     {"type": "input_text", "text": "Planned action JSON:"},
                     {"type": "input_text", "text": planned},
                     {"type": "input_text", "text": ">>> APPROVAL REQUEST END"},
@@ -48,7 +48,7 @@ def _verdict_text(chunks: list[bytes]) -> str:
 def test_safe_command_is_answered_with_an_allow_verdict() -> None:
     rules = SafeCommandRules(safe_prefixes=(("git", "add"),))
 
-    stream = local_review(_guardian_request("git add fichier.py"), rules)
+    stream = local_review(_guardian_request("git add file.py"), rules)
 
     assert json.loads(_verdict_text(list(stream or [])))["outcome"] == "allow"
 

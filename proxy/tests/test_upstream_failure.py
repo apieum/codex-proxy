@@ -1,9 +1,9 @@
 """
-Comportement du proxy quand LiteLLM ne répond pas.
+How the proxy behaves when LiteLLM does not answer.
 
-Une exception qui remonte se traduit chez Codex par « We're currently
-experiencing high demand » : le message masque la cause réelle et envoie
-chercher le problème du mauvais côté.
+An exception left to propagate shows up in Codex as "We're currently
+experiencing high demand": the message hides the real cause and sends you
+looking for the problem on the wrong side.
 """
 import httpx
 import pytest

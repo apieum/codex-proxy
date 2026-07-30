@@ -2,9 +2,9 @@ import json
 
 from proxy.codex_sse import assistant_text_stream
 
-# Codex désérialise `usage` dans une structure dont ces champs ne sont pas
-# optionnels : un objet vide fait échouer le flux entier avec
-# « failed to parse ResponseCompleted: missing field `input_tokens` ».
+# Codex deserialises `usage` into a struct whose fields are not optional: an
+# empty object fails the whole stream with
+# "failed to parse ResponseCompleted: missing field `input_tokens`".
 TOKEN_USAGE_FIELDS = {
     "input_tokens",
     "cached_input_tokens",
@@ -41,18 +41,18 @@ def test_text_is_carried_by_a_done_output_item() -> None:
 
 
 def test_completed_event_declares_every_token_usage_field() -> None:
-    chunks = list(assistant_text_stream(text="peu importe", response_id="resp_1"))
+    chunks = list(assistant_text_stream(text="whatever", response_id="resp_1"))
 
     assert TOKEN_USAGE_FIELDS <= set(_completed_usage(chunks))
 
 
 def test_a_verdict_produced_without_model_consumes_no_input_token() -> None:
-    chunks = list(assistant_text_stream(text="peu importe", response_id="resp_1"))
+    chunks = list(assistant_text_stream(text="whatever", response_id="resp_1"))
 
     assert _completed_usage(chunks)["input_tokens"] == 0
 
 
 def test_every_chunk_is_a_sse_data_frame() -> None:
-    chunks = list(assistant_text_stream(text="peu importe", response_id="resp_1"))
+    chunks = list(assistant_text_stream(text="whatever", response_id="resp_1"))
 
     assert all(c.startswith(b"data: ") and c.endswith(b"\n\n") for c in chunks)

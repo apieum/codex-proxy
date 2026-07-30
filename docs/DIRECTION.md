@@ -1,8 +1,8 @@
 # PROJECT DIRECTION — codex-proxy
 
 Compass document for any agent (human or LLM) working on this codebase.
-Read it AFTER `CLAUDE.md` (which sets the execution rules): this file sets the
-WHAT and the WHY; `CLAUDE.md` sets the HOW.
+It sets the WHAT and the WHY; the README covers the HOW of running and
+contributing.
 
 ---
 
@@ -211,8 +211,9 @@ are at least two real consumers — no speculative architecture.
 - **JSON types**: use `proxy/json_types.py` (`JSONValue`/`JSONDict`), never
   `Any` (except at the litellm boundary), never a bare `dict`.
 - **Fail-open for optimisation, fail-safe for approval** (see P1).
-- **Strict Red/Green TDD**, the Gauntlet (`ruff` + strict `mypy` + `pytest`),
-  package-style `proxy.*` imports: see `CLAUDE.md`, which wins on conflict.
+- **Strict Red/Green TDD** and the Gauntlet (`ruff` + strict `mypy` +
+  `pytest`) gate every change; imports always go through the `proxy.*`
+  package.
 - **No new dependency** without explicit agreement from the user.
 - **Secrets**: payloads contain the user's code and commands. Nothing goes to
   any external service other than the chosen provider; debug logs stay local

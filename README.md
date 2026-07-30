@@ -204,4 +204,12 @@ uv run ruff check .           # lint
 uv run mypy proxy             # types
 ```
 
-The project follows a strict TDD cycle enforced by git hooks — see `CLAUDE.md`.
+Every behaviour here was specified by a failing test first. The three
+commands above are the gate: a change is not done until all three pass.
+
+Two conventions worth knowing before contributing:
+- **Tell, don't ask.** Objects expose behaviour, not state. The pre-filter
+  hands its verdict to a collaborator (`outcome.allow()`, `outcome.deny(...)`)
+  rather than returning a value for the caller to branch on.
+- **Comments explain why, not what.** Most comments in this codebase record a
+  measurement or a decision that is not visible in the code.
