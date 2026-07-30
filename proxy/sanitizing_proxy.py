@@ -1,0 +1,102 @@
+"""
+Petit reverse-proxy placé DEVANT LiteLLM.
+
+Pourquoi ce fichier existe : le hook async_pre_call_hook de LiteLLM ne
+couvre que /chat/completions, /embeddings, /image/generation -- PAS
+/v1/responses, l'endpoint que Codex utilise. custom_handler.py n'était
+donc jamais appelé pour les requêtes de Codex, malgré ce qu'on pensait.
+
+Architecture :
+    Codex --> ce proxy (port 4000) --> LiteLLM (port 4001, interne) --> Cerebras
+
+Ce proxy lit le corps de toute requête POST /v1/responses, l'assainit
+avec sanitize_body() (custom_handler.py), puis la relaie telle quelle à
+LiteLLM. Tout le reste (GET /v1/models, etc.) est simplement transmis.
+"""
+import json
+import os
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import StreamingResponse
+
+from custom_handler import sanitize_body
+from local_compactor import compact_old_tool_outputs
+
+LITELLM_UPSTREAM = "http://127.0.0.1:4001"
+DEBUG_LOG_PATH = "/tmp/cerebras_proxy_debug.log"
+DEBUG_ENABLED = os.environ.get("CEREBRAS_PROXY_DEBUG", "").lower() in ("1", "true", "yes")
+
+app = FastAPI()
+client = httpx.AsyncClient(timeout=None)
+
+
+def _debug_log(label: str, data) -> None:
+    if not DEBUG_ENABLED:
+        return
+    try:
+        with open(DEBUG_LOG_PATH, "a") as f:
+            f.write(f"\n===== {label} =====\n")
+            f.write(json.dumps(data, indent=2, ensure_ascii=False))
+            f.write("\n")
+    except Exception as exc:
+        print(f"[sanitizing_proxy] échec écriture debug log: {exc}")
+
+
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy(path: str, request: Request):
+    url = f"{LITELLM_UPSTREAM}/{path}"
+
+    headers = dict(request.headers)
+    headers.pop("host", None)
+    headers.pop("content-length", None)
+
+    body = await request.body()
+
+    if request.method == "POST" and path == "v1/responses" and body:
+        try:
+            data = json.loads(body)
+            _debug_log("AVANT sanitize_body", data)
+            data = sanitize_body(data)
+            data = await compact_old_tool_outputs(data)
+            _debug_log("APRES sanitize_body + compaction", data)
+            body = json.dumps(data).encode()
+        except Exception as exc:
+            print(f"[sanitizing_proxy] échec du parsing/assainissement, requête transmise telle quelle: {exc}")
+
+    upstream_request = client.build_request(
+        request.method,
+        url,
+        headers=headers,
+        content=body,
+        params=request.query_params,
+    )
+    upstream_response = await client.send(upstream_request, stream=True)
+
+    if DEBUG_ENABLED and path == "v1/responses":
+        async def _tee_and_log():
+            chunks = []
+            async for chunk in upstream_response.aiter_raw():
+                chunks.append(chunk)
+                yield chunk
+            try:
+                raw = b"".join(chunks).decode("utf-8", errors="replace")
+                with open(DEBUG_LOG_PATH, "a") as f:
+                    f.write("\n===== REPONSE (stream brut, SSE) =====\n")
+                    f.write(raw)
+                    f.write("\n")
+            except Exception as exc:
+                print(f"[sanitizing_proxy] échec écriture debug log réponse: {exc}")
+
+        response_iterator = _tee_and_log()
+    else:
+        response_iterator = upstream_response.aiter_raw()
+
+    return StreamingResponse(
+        response_iterator,
+        status_code=upstream_response.status_code,
+        headers={
+            k: v
+            for k, v in upstream_response.headers.items()
+            if k.lower() not in ("content-length", "transfer-encoding", "connection")
+        },
+    )
