@@ -29,6 +29,7 @@ NON_STANDARD_TOOL_TYPES = {
     "file_search",
     "image_generation",
     "web_search_preview",
+    "web_search",
 }
 
 

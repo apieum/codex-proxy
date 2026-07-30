@@ -162,9 +162,10 @@ problems were hit:
    `store`, `previous_response_id`, `parallel_tool_calls` and others are
    stripped before sending.
 3. **Codex native tools with no Cerebras equivalent** — `namespace`,
-   `local_shell`, `computer_use`, `code_interpreter`, `file_search` and
-   `image_generation` belong to OpenAI's hosted infrastructure. They are
-   removed from `tools`.
+   `local_shell`, `computer_use`, `code_interpreter`, `file_search`,
+   `image_generation` and `web_search` belong to OpenAI's hosted
+   infrastructure. They are removed from `tools`; only `function` tools reach
+   the provider.
 4. **Orphan tool calls** — removing those tools can leave incomplete
    `function_call`/`function_call_output` pairs, which Cerebras rejects. They
    are re-paired, and true orphans dropped.
@@ -202,8 +203,8 @@ Look for the last `BEFORE sanitize_body` block to see exactly what Codex sent.
   not enough for agentic use. The paid Developer tier (131K context, 1000
   req/min) is recommended.
 - OpenAI-native features (image generation, computer use, hosted code
-  interpreter, file search) do not work through Cerebras. Only
-  `function`/`mcp`/`web_search` tools pass.
+  interpreter, file search, web search) do not work through Cerebras. Only
+  `function` tools pass.
 - Escalated reviews leave the machine, like the rest of Codex traffic. The
   pre-filter keeps most decisions local, but not all of them.
 - `[apps._default] enabled = false` also disables the legitimate Apps
