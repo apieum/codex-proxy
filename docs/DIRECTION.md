@@ -91,6 +91,22 @@ requête via un petit modèle local au lieu de la relayer vers Cerebras.
      tokens), le `cwd`, et au plus les derniers messages user du transcript ;
    - PAS le prompt Guardian de 18 k chars, PAS les AGENTS.md complets,
      PAS le transcript intégral, PAS les tools (réponse directe forcée).
+
+   **Fait (2026-07-30)** — `guardian.compact_review_request` : 48 942 chars
+   ramenés à 884 (~220 tokens) sur une requête réaliste.
+
+   **Décision (2026-07-30) — la zone grise part chez Cerebras, pas au modèle
+   local.** Même réduite à 220 tokens, la requête demande ~19 s d'ingestion à
+   11,65 tok/s, au-delà du délai d'inactivité de Codex ; et un 1.2B juge mal
+   une question de sécurité. L'escalade est donc routée vers
+   `cerebras-review` — le modèle déjà en service, `reasoning_effort: low`
+   (plancher de gpt-oss-120b, qui refuse `none`), pour ~0,0001 $ par verdict.
+
+   Conséquence à assumer : **la commande jugée quitte la machine**, ce qui
+   entame l'objectif n°4 (remplacer les services OpenAI par des équivalents
+   locaux). L'exposition reste bornée — le même trafic Codex passe déjà par
+   Cerebras, et le pré-filtre (M1.3) tranche localement la majorité des cas
+   sans aucun appel. Revenir au local suppose un GPU, pas un réglage.
 3. **M1.3 — Pré-filtre déterministe AVANT le LLM.** La plupart des actions
    évaluées sont banales (`git add`, `ls`, lectures de fichiers...). Une
    liste de règles locales (allowlist de préfixes de commandes sûrs,
@@ -148,8 +164,8 @@ Directives qui en découlent :
   tokens), pas codé en dur. Si le matériel évolue (GPU), seuls les budgets
   changent, pas l'architecture.
 
-**Invariant de sécurité (non négociable).** En cas d'échec du modèle local
-(Ollama éteint, timeout, sortie non parsable), le service auto-review doit
+**Invariant de sécurité (non négociable).** En cas d'échec du backend de
+review (injoignable, timeout, sortie non parsable), le service auto-review doit
 **échouer vers le refus d'auto-approbation** (Codex redemande à l'humain).
 JAMAIS de fail-open qui approuverait une commande par défaut : une compaction
 ratée coûte des tokens, une approbation ratée exécute une commande dangereuse.

@@ -7,13 +7,6 @@ set -euo pipefail
 #   - reasoning_effort valides : low | medium | high (PAS "none")
 #   - $0.35 / M tokens en entrée, $0.75 / M tokens en sortie
 
-# --- Vérifie qu'Ollama tourne (nécessaire pour l'escalade de codex-auto-review) ---
-if ! curl -s -o /dev/null "http://localhost:11434/api/tags"; then
-  echo "⚠ Ollama ne répond pas sur localhost:11434."
-  echo "  Lance-le d'abord : ollama serve"
-  echo "  Et vérifie que le modèle est bien pull : ollama pull hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF"
-  echo "  Sans lui, toute action hors pré-filtre retombera sur l'approbation manuelle."
-fi
 if [[ -z "${CEREBRAS_API_KEY:-}" ]]; then
   echo "Erreur : variable CEREBRAS_API_KEY non définie."
   echo "Fais d'abord : export CEREBRAS_API_KEY='ta_clé_cerebras'"

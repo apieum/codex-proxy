@@ -21,6 +21,30 @@ model_list:
         - reasoning             # idem pour l'objet reasoning au format Responses API
       reasoning_effort: medium   # valeur forcée, seule celle-ci part vers Cerebras
 
+  # Même modèle que le trafic principal, dédié à l'auto-review : le proxy
+  # réduit la requête à ~220 tokens en amont, donc le verdict coûte ~0,0001 $
+  # et arrive en une seconde. `reasoning_effort: low` est le plancher --
+  # gpt-oss-120b refuse "none".
+  - model_name: cerebras-review
+    litellm_params:
+      model: cerebras/gpt-oss-120b
+      api_key: os.environ/CEREBRAS_API_KEY
+      drop_params: true
+      additional_drop_params:
+        - metadata
+        - client_metadata
+        - store
+        - previous_response_id
+        - truncation
+        - background
+        - include
+        - max_tokens
+        - n
+        - parallel_tool_calls
+        - reasoning_effort
+        - reasoning
+      reasoning_effort: low
+
   # Modèle preview Cerebras, plus cher, "évaluation uniquement" -- gardé en
   # option mais pas recommandé comme modèle principal.
   - model_name: cerebras-zai-glm-4.7
@@ -39,31 +63,25 @@ model_list:
         - max_tokens
         - n
 
-  # Modèle gratuit OpenRouter, gardé en fallback si Ollama local est down.
+  # Modèle gratuit OpenRouter, gardé en option de repli.
   - model_name: openrouter-free-review
     litellm_params:
       model: openrouter/tencent/hy3:free
       api_key: os.environ/OPENROUTER_API_KEY
       drop_params: true
 
-  # Petit modèle local (Ollama) pour codex-auto-review : gratuit, rapide,
-  # zéro dépendance réseau externe. Nécessite qu'Ollama tourne en local
-  # (http://localhost:11434) avec le modèle déjà pull.
-  - model_name: local-lfm2
-    litellm_params:
-      model: ollama_chat/hf.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF
-      api_base: http://localhost:11434
-      drop_params: true
-
 # Codex appelle en interne un modèle "codex-auto-review" pour évaluer le
 # risque des commandes avant auto-approbation (git add, git commit, etc.).
-# Routé vers le modèle local LFM2.5 -- gratuit, rapide (petit prompt de
-# classification), zéro appel réseau externe. Si Ollama n'est pas dispo,
-# change juste cette ligne pour repointer vers openrouter-free-review ou
-# cerebras-gpt-oss-120b.
+# Seule la zone grise arrive ici : le pré-filtre du proxy tranche les cas
+# certains sans aucun appel.
+#
+# Routé vers Cerebras et non vers le modèle local : LFM2.5-1.2B ingère à
+# ~12 tok/s, soit ~19 s avant le premier token même après réduction du
+# prompt -- au-delà du délai d'inactivité de Codex. Contrepartie assumée :
+# la commande jugée sort de la machine, comme le reste du trafic Codex.
 router_settings:
   model_group_alias:
-    codex-auto-review: local-lfm2
+    codex-auto-review: cerebras-review
 
 # Ignore silencieusement les paramètres que Cerebras ne supporte pas
 # (ex: parallel_tool_calls, envoyé par défaut par Codex via l'API Responses)
