@@ -69,12 +69,12 @@ requête via un petit modèle local au lieu de la relayer vers Cerebras.
 
 **Étapes imposées, dans l'ordre :**
 
-1. **M1.1 — Capturer le contrat réel.** Lancer une session Codex avec
-   `CEREBRAS_PROXY_DEBUG=1` et récupérer dans `/tmp/cerebras_proxy_debug.log`
-   la requête `codex-auto-review` exacte (prompt système, format d'entrée,
-   schéma de sortie attendu). NE RIEN implémenter avant d'avoir ce payload :
-   le format de réponse attendu par Codex (verdict/risque) doit être
-   reverse-engineeré, pas deviné.
+1. **M1.1 — Capturer le contrat réel. ✅ FAIT (2026-07-30).** Le contrat
+   complet est documenté dans `docs/API_CODEX.md` (détail) et
+   `docs/api_codex.summary.json` (résumé machine — à lire en priorité par les
+   agents). Reste un trou : le **format de réponse SSE** n'a pas été capturé —
+   à compléter lors d'une prochaine session avec le tee de réponse actif
+   (`CEREBRAS_PROXY_DEBUG=1`, réponses loggées par `sanitizing_proxy.py`).
 2. **M1.2 — Route minimale.** Deux options, à trancher après M1.1 :
    - *Option A (préférée si suffisante)* : ajouter une entrée `model_list`
      dans `litellm_cerebras_config.yaml` avec `model_name: codex-auto-review`

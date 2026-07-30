@@ -1,0 +1,54 @@
+{
+  "_meta": {
+    "source": "capture réelle 2026-07-30, 94 requêtes POST /v1/responses (93 main + 1 auto-review)",
+    "detail_doc": "docs/API_CODEX.md",
+    "gap": "réponses SSE non capturées — format de réponse à documenter"
+  },
+  "endpoints": {
+    "POST /v1/responses": "tout le trafic Codex (main + auto-review), stream=true store=false",
+    "GET /v1/models": "cité par les erreurs, non observé — possible validation des noms de modèles"
+  },
+  "request_envelope": {
+    "model": "cerebras-gpt-oss-120b | codex-auto-review — SEUL discriminant de routage",
+    "instructions": "prompt système complet, str ~20k chars, identique à chaque requête",
+    "input": "historique COMPLET renvoyé à chaque tour (types: message, function_call, function_call_output)",
+    "tools": "voir tools_main / guardian.tools",
+    "tool_choice": "auto",
+    "parallel_tool_calls": "false(main)|true(guardian) — droppé pour Cerebras",
+    "reasoning": {"effort": "medium(main)|low(guardian)", "summary": "auto"},
+    "store": false,
+    "stream": true,
+    "include": ["reasoning.encrypted_content — à dropper hors OpenAI"],
+    "prompt_cache_key": "<session_id> | guardian:<session_id>",
+    "client_metadata": "ids codex (installation/thread/turn/session) — droppé",
+    "text": "GUARDIAN SEULEMENT: {verbosity:low, format:{type:json_schema,...}}"
+  },
+  "input_items": {
+    "message": {"id": "msg_<uuid7>", "role": "developer|user|assistant", "content": [{"type": "input_text|output_text", "text": "…"}], "note": "assistant parfois texte vide (checkpoints à retirer); developer=<permissions instructions>; user=<environment_context> XML, AGENTS.md, prompts"},
+    "function_call": {"name": "str", "arguments": "STRING json (pas objet)", "call_id": "str"},
+    "function_call_output": {"id": "fco_<uuid7>", "call_id": "str", "output": "préfixe méta 'Chunk ID/Wall time/Process exited/Original token count: N' + 'Output:\\n' + corps — ne résumer QUE le corps, le préfixe donne le compte de tokens gratuit"}
+  },
+  "tools_main": {
+    "function": ["exec_command", "write_stdin", "view_image", "list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource", "update_plan", "request_user_input", "get_goal", "create_goal", "update_goal"],
+    "non_function_strippés": ["namespace:multi_agent_v1", "namespace:mcp__*", "web_search"]
+  },
+  "guardian": {
+    "model": "codex-auto-review",
+    "role": "juge UNE action planifiée: risque intrinsèque × autorisation user → allow/deny",
+    "instructions": "18446 chars: Evidence Handling (trust: user/developer/AGENTS.md/request_user_input seulement), scoring user_authorization(unknown|low|medium|high), risk(low|medium|high|critical), policy par catégorie (exfiltration/credentials/security-weakening/destructive/low-risk), outcome policy: low,medium→allow; high→allow ssi auth≥medium; critical→deny",
+    "input_3_messages": [
+      "developer: <permissions instructions>",
+      "user: '# AGENTS.md instructions for <path>' + contenu AGENTS.md",
+      "user: multi-parts input_text: intro 'untrusted evidence' → '>>> TRANSCRIPT START' → entrées numérotées sélectives '[N] user: …' '[N] tool exec_command call: {json}' '[N] tool exec_command result: …' → 'Assess the exact planned action below' → 'Planned action JSON:' → {command[],cwd,justification,sandbox_permissions,tool,tty} → '>>> APPROVAL REQUEST END'"
+    ],
+    "tools": ["exec_command", "write_stdin", "view_image — investigation lecture seule; un 1.2B local: retirer tools, forcer réponse directe"],
+    "output_schema": {"name": "codex_output_schema", "risk_level": "low|medium|high|critical", "user_authorization": "unknown|low|medium|high", "outcome": "allow|deny (SEUL requis)", "rationale": "str", "raccourci_low_risk": "{\"outcome\":\"allow\"} seul"},
+    "on_error": "toute erreur HTTP → Codex rejette l'action et interdit le contournement → fail-safe déjà côté Codex; erreur locale acceptable, JAMAIS fabriquer allow par défaut",
+    "contraintes_local": "prompt ≈8k+ tokens → contexte local ≥16k (LFM2.5 supporte 32k, le -c 4096 actuel est insuffisant); sortie via JSON-schema Ollama ou grammaire GBNF, température ≤0.2"
+  },
+  "compaction_facts": {
+    "historique_resent_chaque_tour": "2900 messages + 2004 paires call/output sur 93 requêtes d'une session",
+    "instructions_identiques": "candidat n°1 au prompt caching provider (prompt_cache_key déjà transmis)",
+    "token_count_gratuit": "chaque function_call_output annonce 'Original token count: N' dans son préfixe"
+  }
+}
