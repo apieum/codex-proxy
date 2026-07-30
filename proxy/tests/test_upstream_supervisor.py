@@ -5,6 +5,10 @@ Running `uvicorn proxy.sanitizing_proxy:app` with no LiteLLM behind it answers
 502 to every request: the proxy alone has nowhere to relay. So it takes charge
 of starting its upstream, without ever stepping on a LiteLLM the user started
 themselves.
+
+A process can also start and die at once -- an incomplete install exits on
+`ModuleNotFoundError` in under a second. Waiting the full startup timeout to
+say so leaves the operator staring at nothing for a minute.
 """
 import pytest
 
@@ -14,7 +18,8 @@ from proxy.upstream_supervisor import UpstreamSupervisor
 class ProcessSpy:
     """The spawned process, which the supervisor tells to stop."""
 
-    def __init__(self) -> None:
+    def __init__(self, returncode: int | None = None) -> None:
+        self.returncode = returncode
         self.stopped = False
 
     def terminate(self) -> None:
@@ -25,8 +30,8 @@ class ProcessSpy:
 
 
 class SpawnSpy:
-    def __init__(self) -> None:
-        self.process = ProcessSpy()
+    def __init__(self, returncode: int | None = None) -> None:
+        self.process = ProcessSpy(returncode)
         self.calls = 0
 
     async def __call__(self) -> ProcessSpy:
@@ -122,3 +127,28 @@ async def test_an_upstream_that_cannot_be_started_is_reported() -> None:
     ).ensure_available()
 
     assert "LiteLLM" in report.messages[0]
+
+
+@pytest.mark.anyio
+async def test_an_upstream_that_died_at_once_is_reported() -> None:
+    """An incomplete install exits on ModuleNotFoundError within a second."""
+    report = ReportSpy()
+
+    supervisor = _supervisor(
+        already_listening=False, spawn=SpawnSpy(returncode=1), report=report
+    )
+    await supervisor.ensure_available()
+
+    assert "exited" in report.messages[0]
+
+
+@pytest.mark.anyio
+async def test_a_running_upstream_is_not_reported_as_dead() -> None:
+    report = ReportSpy()
+
+    supervisor = _supervisor(
+        already_listening=False, spawn=SpawnSpy(returncode=None), report=report
+    )
+    await supervisor.ensure_available()
+
+    assert report.messages == []

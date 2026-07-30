@@ -14,6 +14,10 @@ from typing import Protocol
 
 
 class StoppableProcess(Protocol):
+    @property
+    def returncode(self) -> int | None:
+        """None while the process is still running."""
+
     def terminate(self) -> None: ...
     async def wait(self) -> int: ...
 
@@ -34,9 +38,17 @@ class UpstreamSupervisor:
         if await self._is_listening():
             return
         try:
-            self._own_process = await self._spawn()
+            process = await self._spawn()
         except OSError as exc:
             self._report(f"could not start LiteLLM ({exc}); requests will answer 502.")
+            return
+
+        self._own_process = process
+        if process.returncode is not None:
+            self._report(
+                f"LiteLLM exited immediately (code {process.returncode}); "
+                "see its output above. Requests will answer 502."
+            )
 
     async def release(self) -> None:
         if self._own_process is None:
