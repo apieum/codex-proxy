@@ -13,6 +13,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["proxy/tests"]
+pythonpath = ["."]
 
 [tool.mypy]
 strict = true
