@@ -19,6 +19,10 @@ from proxy.json_types import JSONDict, JSONValue
 # rediriger vers une commande arbitraire.
 SHELL_CONTROL_CHARACTERS = frozenset(";&|`$()<>\n\r")
 
+# Forcer, c'est passer outre une protection que la commande applique par
+# défaut : le préfixe reste sûr, l'effet ne l'est plus.
+FORCING_OPTIONS = frozenset({"--force", "-f"})
+
 
 class ApprovalOutcome(Protocol):
     def allow(self) -> None: ...
@@ -44,7 +48,7 @@ class SafeCommandRules:
 
     def evaluate(self, action: JSONDict, outcome: ApprovalOutcome) -> None:
         shell_command = self._shell_command(action)
-        words = shell_command.split()
+        words = _without_git_working_directory(shell_command.split())
 
         # Un refus l'emporte toujours : la liste noire passe avant la voie
         # rapide, sinon un préfixe autorisé suffirait à la contourner.
@@ -56,7 +60,7 @@ class SafeCommandRules:
         # Un enchaînement disqualifie la voie rapide d'approbation, il ne
         # dispense pas de rendre un verdict : la décision revient au modèle.
         safe = _matching_prefix(words, self._safe_prefixes)
-        if safe is not None and not _chains_other_commands(shell_command):
+        if safe is not None and _stays_within_the_safe_prefix(shell_command, words):
             outcome.allow()
             return
 
@@ -68,6 +72,24 @@ class SafeCommandRules:
             return ""
         shell_command = command[-1]
         return shell_command if isinstance(shell_command, str) else ""
+
+
+def _without_git_working_directory(words: Sequence[str]) -> Sequence[str]:
+    """
+    `git -C <dir> add x` se décide comme `git add x` : l'option déplace le
+    répertoire d'exécution, elle ne change pas la commande évaluée.
+
+    Seule `-C` est neutralisée. `-c <clé>=<valeur>` ne l'est pas : plusieurs
+    clés de configuration (`alias.*`, `core.pager`, `core.sshCommand`)
+    exécutent une commande arbitraire, ce qui en fait un enchaînement déguisé.
+    """
+    if not words or words[0] != "git":
+        return words
+
+    remaining = list(words[1:])
+    while remaining and remaining[0] == "-C":
+        del remaining[:2]
+    return ["git", *remaining]
 
 
 def _configured_prefixes(value: JSONValue) -> tuple[tuple[str, ...], ...]:
@@ -92,5 +114,13 @@ def _matching_prefix(
     return None
 
 
+def _stays_within_the_safe_prefix(shell_command: str, words: Sequence[str]) -> bool:
+    return not _chains_other_commands(shell_command) and not _forces_past_a_safeguard(words)
+
+
 def _chains_other_commands(shell_command: str) -> bool:
     return bool(SHELL_CONTROL_CHARACTERS & set(shell_command))
+
+
+def _forces_past_a_safeguard(words: Sequence[str]) -> bool:
+    return bool(FORCING_OPTIONS & set(words))

