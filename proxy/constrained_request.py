@@ -59,6 +59,9 @@ def constrain_output(body: JSONDict) -> JSONDict:
 
     constrained = dict(body)
     del constrained["tools"]
+    # Cerebras 400s on "tool_choice is only allowed when tools are specified":
+    # it has to leave with them, not linger pointing at nothing.
+    constrained.pop("tool_choice", None)
     constrained["text"] = CONSTRAINED_TURN_FORMAT
     constrained["instructions"] = _instructions(body.get("instructions"), tools)
     return constrained

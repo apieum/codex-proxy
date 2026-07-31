@@ -22,6 +22,7 @@ from proxy.json_types import JSONDict
 CODEX_REQUEST: JSONDict = {
     "model": "cerebras-gpt-oss-120b",
     "instructions": "You are a coding agent.",
+    "tool_choice": "auto",
     "tools": [
         {
             "type": "function",
@@ -120,3 +121,8 @@ def test_arguments_travel_as_a_string() -> None:
     assert isinstance(arguments, dict)
 
     assert arguments["type"] == "string"
+
+
+def test_tool_choice_leaves_with_the_tools() -> None:
+    """Cerebras 400s on "tool_choice is only allowed when tools are specified"."""
+    assert "tool_choice" not in _constrained()
