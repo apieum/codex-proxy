@@ -143,7 +143,10 @@ def _constrained_answer(upstream: httpx.Response) -> StreamingResponse:
                 + "\n",
             )
         for frame in rewrite_constrained_response(
-            chunks, response_id=f"resp_{uuid.uuid4().hex}", call_id=f"call_{uuid.uuid4().hex}"
+            chunks,
+            response_id=f"resp_{uuid.uuid4().hex}",
+            call_id=f"call_{uuid.uuid4().hex}",
+            report=_report,
         ):
             yield frame
 

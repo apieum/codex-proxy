@@ -10,7 +10,7 @@ the user, never executed. Guessing a command out of prose is the one thing
 this must not do, since these calls are auto-approved before they run.
 """
 import json
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 from proxy.codex_sse import assistant_text_stream, function_call_stream
 from proxy.constrained_turn import deliver
@@ -22,9 +22,10 @@ TEXT_DELTA = "response.output_text.delta"
 class _RewrittenTurn:
     """Receives the turn's case and holds the stream that carries it to Codex."""
 
-    def __init__(self, response_id: str, call_id: str) -> None:
+    def __init__(self, response_id: str, call_id: str, report: Callable[[str], None]) -> None:
         self._response_id = response_id
         self._call_id = call_id
+        self._report = report
         self._stream: Iterator[bytes] = iter(())
 
     def message(self, text: str) -> None:
@@ -39,6 +40,12 @@ class _RewrittenTurn:
         )
 
     def unparsable(self, raw: str) -> None:
+        # An off-schema turn means constrained decoding is not in effect --
+        # staying silent would hide that the whole mechanism is inert.
+        self._report(
+            "the model answered off-schema, so constrained decoding is not in "
+            f"effect; shown as a message, not executed: {raw[:120]!r}"
+        )
         # Shown, not run: the user sees exactly what the model produced.
         self.message(raw)
 
@@ -47,9 +54,12 @@ class _RewrittenTurn:
 
 
 def rewrite_constrained_response(
-    upstream: Iterable[bytes], response_id: str, call_id: str
+    upstream: Iterable[bytes],
+    response_id: str,
+    call_id: str,
+    report: Callable[[str], None],
 ) -> Iterator[bytes]:
-    turn = _RewrittenTurn(response_id, call_id)
+    turn = _RewrittenTurn(response_id, call_id, report)
     deliver("".join(_text_deltas(upstream)), turn)
     return turn.frames()
 

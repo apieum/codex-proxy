@@ -11,6 +11,7 @@ a call. Guessing a command out of prose is the one thing this must not do:
 these turns are auto-approved before they run.
 """
 import json
+from collections.abc import Callable
 
 from proxy.constrained_response import rewrite_constrained_response
 from proxy.json_types import JSONDict
@@ -29,9 +30,13 @@ def _upstream(text: str) -> list[bytes]:
     return frames
 
 
-def _rewritten(text: str) -> list[JSONDict]:
+def _ignored(message: str) -> None:
+    """Most tests do not care what is reported, only what is streamed."""
+
+
+def _rewritten(text: str, report: Callable[[str], None] = _ignored) -> list[JSONDict]:
     chunks = rewrite_constrained_response(
-        _upstream(text), response_id="resp_1", call_id="call_1"
+        _upstream(text), response_id="resp_1", call_id="call_1", report=report
     )
     events: list[JSONDict] = []
     for chunk in chunks:
@@ -90,3 +95,29 @@ def test_narrated_text_still_reaches_the_user() -> None:
 
 def test_the_rewritten_stream_ends_with_the_mandatory_completed_event() -> None:
     assert _rewritten(TOOL_TURN)[-1]["type"] == "response.completed"
+
+
+class ReportSpy:
+    def __init__(self) -> None:
+        self.messages: list[str] = []
+
+    def __call__(self, message: str) -> None:
+        self.messages.append(message)
+
+
+def test_an_off_schema_turn_is_reported() -> None:
+    """Silence here would hide that constrained decoding is not in effect."""
+    report = ReportSpy()
+
+    _rewritten("I'll stage the files and commit", report)
+
+    assert report.messages != []
+
+
+def test_a_conforming_turn_is_not_reported() -> None:
+    """Reporting every turn would drown the signal."""
+    report = ReportSpy()
+
+    _rewritten(TOOL_TURN, report)
+
+    assert report.messages == []
