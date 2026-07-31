@@ -63,13 +63,25 @@ def constrain_output(body: JSONDict) -> JSONDict:
     # it has to leave with them, not linger pointing at nothing.
     constrained.pop("tool_choice", None)
     constrained["text"] = CONSTRAINED_TURN_FORMAT
-    constrained["instructions"] = _instructions(body.get("instructions"), tools)
+    # `instructions` is left byte-for-byte as Codex wrote it: appending the
+    # schemas there grew it by 50% and drowned the AGENTS.md conventions.
+    constrained["input"] = [*_existing_input(body), _protocol_item(tools)]
     return constrained
 
 
-def _instructions(original: JSONValue, tools: list[JSONValue]) -> str:
-    preamble = original if isinstance(original, str) else ""
-    return preamble + TOOL_PROTOCOL + "\n".join(_described(t) for t in tools)
+def _existing_input(body: JSONDict) -> list[JSONValue]:
+    items = body.get("input")
+    return list(items) if isinstance(items, list) else []
+
+
+def _protocol_item(tools: list[JSONValue]) -> JSONDict:
+    """Last item read, so the answering shape stays fresh when the model acts."""
+    described = TOOL_PROTOCOL + "\n".join(_described(t) for t in tools)
+    return {
+        "type": "message",
+        "role": "developer",
+        "content": [{"type": "input_text", "text": described}],
+    }
 
 
 def _described(tool: JSONValue) -> str:

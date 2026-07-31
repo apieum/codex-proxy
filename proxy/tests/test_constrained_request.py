@@ -61,26 +61,31 @@ def test_the_schema_admits_exactly_two_kinds_of_turn() -> None:
     assert '"message"' in json.dumps(text) and '"tool_call"' in json.dumps(text)
 
 
+def _last_input_text() -> str:
+    items = _constrained()["input"]
+    assert isinstance(items, list)
+    last = items[-1]
+    assert isinstance(last, dict)
+    return json.dumps(last)
+
+
 def test_every_tool_name_is_described_to_the_model() -> None:
     """Removed from `tools`, they must still be known or they can never be called."""
-    instructions = _constrained()["instructions"]
-    assert isinstance(instructions, str)
+    described = _last_input_text()
 
-    assert "exec_command" in instructions and "request_user_input" in instructions
+    assert "exec_command" in described and "request_user_input" in described
 
 
 def test_a_tool_parameter_schema_reaches_the_model() -> None:
-    instructions = _constrained()["instructions"]
-    assert isinstance(instructions, str)
-
-    assert "cmd" in instructions
+    assert "cmd" in _last_input_text()
 
 
-def test_the_original_instructions_are_preserved() -> None:
-    instructions = _constrained()["instructions"]
-    assert isinstance(instructions, str)
-
-    assert "You are a coding agent." in instructions
+def test_the_instructions_are_left_exactly_as_codex_wrote_them() -> None:
+    """
+    Measured: appending the tool schemas grew `instructions` by 50%, drowning
+    AGENTS.md and the project conventions it carries.
+    """
+    assert _constrained()["instructions"] == CODEX_REQUEST["instructions"]
 
 
 def test_a_request_without_tools_is_left_untouched() -> None:
