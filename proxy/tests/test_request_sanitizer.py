@@ -127,3 +127,43 @@ def test_a_custom_call_without_its_output_is_dropped() -> None:
     }
 
     assert _input_types(orphan) == []
+
+
+SCHEMA_FORMAT: JSONDict = {
+    "verbosity": "low",
+    "format": {"type": "json_schema", "name": "codex_output_schema", "schema": {}},
+}
+
+
+def test_tools_leave_when_an_output_schema_is_imposed() -> None:
+    """Cerebras 400s: "tools" is incompatible with "response_format"."""
+    body: JSONDict = {
+        "text": SCHEMA_FORMAT,
+        "tools": [{"type": "function", "name": "exec_command"}],
+    }
+    sanitised = sanitize_body(json.loads(json.dumps(body)))
+    assert isinstance(sanitised, dict)
+
+    assert "tools" not in sanitised
+
+
+def test_the_output_schema_itself_is_kept() -> None:
+    """It is what makes the auto-review verdict parsable; the tools are not."""
+    body: JSONDict = {
+        "text": SCHEMA_FORMAT,
+        "tools": [{"type": "function", "name": "exec_command"}],
+    }
+    sanitised = sanitize_body(json.loads(json.dumps(body)))
+    assert isinstance(sanitised, dict)
+
+    assert sanitised["text"] == SCHEMA_FORMAT
+
+
+def test_tools_stay_when_the_text_field_carries_no_schema() -> None:
+    """Main traffic sends text={"verbosity": "low"} on every single request."""
+    body: JSONDict = {
+        "text": {"verbosity": "low"},
+        "tools": [{"type": "function", "name": "exec_command"}],
+    }
+
+    assert _tool_types(body) == ["function"]

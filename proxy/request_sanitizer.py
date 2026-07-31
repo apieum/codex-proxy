@@ -76,6 +76,14 @@ def _is_empty_assistant_message(item: JSONDict) -> bool:
     return False
 
 
+def _imposes_an_output_schema(text: JSONValue) -> bool:
+    """Only a `format` becomes a response_format; `{"verbosity": "low"}` alone does not."""
+    if not isinstance(text, dict):
+        return False
+    fmt = text.get("format")
+    return isinstance(fmt, dict) and fmt.get("type") in ("json_schema", "json_object")
+
+
 def _is_function_call(item: JSONDict) -> bool:
     # `custom_tool_call` carries `input` where a function call carries
     # `arguments`. Missing it left the call unrecognised while its output was
@@ -171,6 +179,14 @@ def sanitize_body(data: JSONValue) -> JSONValue:
 
     if "tools" in data:
         data["tools"] = _clean_tools(data["tools"])
+
+    # Cerebras refuses both at once: `"tools" is incompatible with
+    # "response_format"`. The schema is what keeps the auto-review verdict
+    # parsable, so the tools are what give way -- the reviewer loses its
+    # read-only checks, an accepted degradation.
+    if _imposes_an_output_schema(data.get("text")):
+        data.pop("tools", None)
+        data.pop("tool_choice", None)
 
     if "input" in data:
         data["input"] = _clean_orphan_tool_calls(data["input"])
