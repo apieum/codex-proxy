@@ -130,6 +130,14 @@ serves the request itself instead of relaying it unchanged.
    `docs/CODEX_API.md` section 5.4), temperature ≤ 0.2, output capped at a few
    dozen tokens. Never parse free-form text.
 5. **M1.5 — Expose the model in `/v1/models`** if Codex checks it.
+6. **M1.6 — Narrow when escalation is even legitimate (open).** Raised
+   2026-07-31: escalating `codex-auto-review` to the model should require that
+   the user actually sent a message and that `instructions` is populated.
+   Rationale to confirm with the author before implementing -- as stated it
+   reads as a guard against reviewing a turn with no human intent behind it,
+   which would make an auto-approval meaningless. Decide the exact condition
+   first, since a wrong guard either blocks legitimate reviews or waves
+   through unattended ones.
 
 **Measured local-model performance (2026-07-30, user hardware,
 LFM2.5-1.2B-Instruct via llama-cli, CPU).** Kept because it is what ruled out
