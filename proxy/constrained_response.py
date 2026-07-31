@@ -65,14 +65,15 @@ def rewrite_constrained_response(
 
 
 def _text_deltas(upstream: Iterable[bytes]) -> Iterator[str]:
-    for chunk in upstream:
-        for line in chunk.split(b"\n\n"):
-            event = _parsed_event(line)
-            if event is None or event.get("type") != TEXT_DELTA:
-                continue
-            delta = event.get("delta")
-            if isinstance(delta, str):
-                yield delta
+    # Join first: network chunks land where TCP decides, so splitting each one
+    # on its own drops any frame that straddles a boundary.
+    for line in b"".join(upstream).split(b"\n\n"):
+        event = _parsed_event(line)
+        if event is None or event.get("type") != TEXT_DELTA:
+            continue
+        delta = event.get("delta")
+        if isinstance(delta, str):
+            yield delta
 
 
 def _parsed_event(line: bytes) -> JSONDict | None:

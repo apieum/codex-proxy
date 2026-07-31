@@ -121,3 +121,39 @@ def test_a_conforming_turn_is_not_reported() -> None:
     _rewritten(TOOL_TURN, report)
 
     assert report.messages == []
+
+
+def _split_every(payload: bytes, size: int) -> list[bytes]:
+    """Network chunks land where TCP decides, not on frame boundaries."""
+    return [payload[i : i + size] for i in range(0, len(payload), size)]
+
+
+def test_a_frame_split_across_network_chunks_loses_nothing() -> None:
+    """Observed in production: the leading `{"kind` was dropped and the turn died."""
+    whole = b"".join(_upstream(TOOL_TURN))
+
+    events = []
+    for chunk in rewrite_constrained_response(
+        _split_every(whole, 13), response_id="r", call_id="c", report=_ignored
+    ):
+        for line in chunk.split(b"\n\n"):
+            if line.startswith(b"data: "):
+                events.append(json.loads(line.removeprefix(b"data: ")))
+    items = [e["item"] for e in events if e["type"] == "response.output_item.done"]
+
+    assert items[0]["type"] == "function_call"
+
+
+def test_a_split_frame_still_carries_the_exact_command() -> None:
+    whole = b"".join(_upstream(TOOL_TURN))
+
+    events = []
+    for chunk in rewrite_constrained_response(
+        _split_every(whole, 7), response_id="r", call_id="c", report=_ignored
+    ):
+        for line in chunk.split(b"\n\n"):
+            if line.startswith(b"data: "):
+                events.append(json.loads(line.removeprefix(b"data: ")))
+    items = [e["item"] for e in events if e["type"] == "response.output_item.done"]
+
+    assert json.loads(items[0]["arguments"]) == {"cmd": "git status"}
