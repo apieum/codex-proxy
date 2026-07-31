@@ -96,3 +96,28 @@ def test_a_message_turn_without_text_says_nothing() -> None:
     deliver(json.dumps({"kind": "message"}), turn)
 
     assert turn.said is None
+
+
+def test_serialised_arguments_are_handed_over_parsed() -> None:
+    """The schema carries them as a string; callers still receive a mapping."""
+    turn = TurnSpy()
+
+    deliver(
+        json.dumps(
+            {"kind": "tool_call", "tool": "exec_command", "arguments": '{"cmd": "ls -la"}'}
+        ),
+        turn,
+    )
+
+    assert turn.called is not None and turn.called[1] == {"cmd": "ls -la"}
+
+
+def test_arguments_that_are_not_valid_json_do_not_become_a_call() -> None:
+    turn = TurnSpy()
+
+    deliver(
+        json.dumps({"kind": "tool_call", "tool": "exec_command", "arguments": "not json"}),
+        turn,
+    )
+
+    assert turn.called is None

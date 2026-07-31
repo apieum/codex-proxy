@@ -11,26 +11,42 @@ import json
 
 from proxy.json_types import JSONDict, JSONValue
 
+# Shaped for Cerebras constrained decoding: every object forbids extras, and
+# `arguments` travels as a JSON string because a free-form object cannot
+# satisfy `additionalProperties: false`. Codex represents call arguments the
+# same way, so nothing is lost in translation.
 TURN_SCHEMA: JSONDict = {
     "type": "object",
+    "additionalProperties": False,
     "properties": {
         "kind": {"type": "string", "enum": ["message", "tool_call"]},
         "text": {"type": "string", "description": "Set when kind is message."},
         "tool": {"type": "string", "description": "Set when kind is tool_call."},
-        "arguments": {"type": "object", "description": "Set when kind is tool_call."},
+        "arguments": {
+            "type": "string",
+            "description": "Set when kind is tool_call: the arguments as JSON.",
+        },
     },
     "required": ["kind"],
 }
 
+# Without `strict`, Cerebras treats the schema as guidance only and narrating
+# stays expressible -- which is the very thing this exists to prevent.
 CONSTRAINED_TURN_FORMAT: JSONDict = {
-    "format": {"type": "json_schema", "name": "codex_turn", "schema": TURN_SCHEMA}
+    "format": {
+        "type": "json_schema",
+        "name": "codex_turn",
+        "strict": True,
+        "schema": TURN_SCHEMA,
+    }
 }
 
 TOOL_PROTOCOL = (
     "\n\n# Answering protocol\n"
     "Every answer is a single JSON object, and nothing else.\n"
     'To speak to the user: {"kind":"message","text":"..."}\n'
-    'To run a tool: {"kind":"tool_call","tool":"<name>","arguments":{...}}\n'
+    'To run a tool: {"kind":"tool_call","tool":"<name>","arguments":"{...}"}\n'
+    "The arguments field is a JSON object serialised as a string.\n"
     "Never describe a tool call in prose: describing it does not run it.\n"
     "\n# Available tools\n"
 )

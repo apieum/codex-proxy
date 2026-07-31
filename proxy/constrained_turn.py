@@ -41,11 +41,26 @@ def _deliver_message(turn: JSONDict, outcome: TurnOutcome, raw: str) -> None:
 
 def _deliver_tool_call(turn: JSONDict, outcome: TurnOutcome, raw: str) -> None:
     name = turn.get("tool")
-    arguments = turn.get("arguments")
     if not isinstance(name, str) or not name:
         outcome.unparsable(raw)
         return
-    outcome.tool_call(name, arguments if isinstance(arguments, dict) else {})
+
+    arguments = _arguments(turn.get("arguments"))
+    if arguments is None:
+        outcome.unparsable(raw)
+        return
+    outcome.tool_call(name, arguments)
+
+
+def _arguments(value: JSONValue) -> JSONDict | None:
+    """The schema carries them serialised; callers still receive a mapping."""
+    if isinstance(value, dict):
+        return value
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        return _parsed_object(value)
+    return None
 
 
 def _parsed_object(raw: str) -> JSONDict | None:

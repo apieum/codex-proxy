@@ -7,6 +7,12 @@ signatures have to travel inside `instructions` instead.
 
 Measured on a real capture: the 12 tool schemas weigh ~2,700 tokens and are
 already sent on every request, so moving them is close to cost-neutral.
+
+The schema shape follows the Cerebras structured-output requirements
+(inference-docs.cerebras.ai/capabilities/structured-outputs): without
+`strict: true` the schema is guidance only, and every object needs
+`additionalProperties: false`. Their docs also state that `tools` and
+`response_format` cannot travel in the same request.
 """
 import json
 
@@ -81,3 +87,36 @@ def test_a_request_without_tools_is_left_untouched() -> None:
     unchanged: JSONDict = {"model": "cerebras-gpt-oss-120b", "input": []}
 
     assert constrain_output(unchanged) == unchanged
+
+
+def _format() -> JSONDict:
+    text = _constrained()["text"]
+    assert isinstance(text, dict)
+    fmt = text["format"]
+    assert isinstance(fmt, dict)
+    return fmt
+
+
+def test_the_schema_is_enforced_not_merely_suggested() -> None:
+    """Without strict, Cerebras treats the schema as a hint and narration returns."""
+    assert _format()["strict"] is True
+
+
+def test_the_root_object_forbids_extra_properties() -> None:
+    """Cerebras rejects a strict schema whose objects allow extras."""
+    schema = _format()["schema"]
+    assert isinstance(schema, dict)
+
+    assert schema["additionalProperties"] is False
+
+
+def test_arguments_travel_as_a_string() -> None:
+    """A free-form object cannot satisfy additionalProperties: false."""
+    schema = _format()["schema"]
+    assert isinstance(schema, dict)
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    arguments = properties["arguments"]
+    assert isinstance(arguments, dict)
+
+    assert arguments["type"] == "string"
