@@ -2,7 +2,23 @@ import json
 
 from proxy.approval_rules import SafeCommandRules
 from proxy.guardian import local_review
-from proxy.json_types import JSONDict
+from proxy.json_types import JSONDict, JSONValue
+
+
+def _guardian_request_with_history(*shell_commands: str) -> JSONDict:
+    """Codex resends past actions in the transcript; the judged one comes last."""
+    parts: list[JSONValue] = [{"type": "input_text", "text": ">>> TRANSCRIPT START"}]
+    for shell_command in shell_commands:
+        planned = json.dumps(
+            {"command": ["/usr/bin/zsh", "-lc", shell_command], "cwd": "/home/user/project"}
+        )
+        parts.append({"type": "input_text", "text": "Planned action JSON:"})
+        parts.append({"type": "input_text", "text": planned})
+    parts.append({"type": "input_text", "text": ">>> APPROVAL REQUEST END"})
+    return {
+        "model": "codex-auto-review",
+        "input": [{"type": "message", "role": "user", "content": parts}],
+    }
 
 
 def _guardian_request(shell_command: str) -> JSONDict:
@@ -67,3 +83,30 @@ def test_grey_zone_is_not_answered_locally() -> None:
     stream = local_review(_guardian_request("npm publish"), rules)
 
     assert stream is None
+
+
+def test_the_judged_action_is_the_last_of_the_transcript() -> None:
+    """Observed in production: an old benign entry got judged instead of the new one."""
+    rules = SafeCommandRules(safe_prefixes=(("git", "status"),))
+
+    stream = local_review(
+        _guardian_request_with_history("git status --porcelain", "npm publish"), rules
+    )
+
+    assert stream is None
+
+
+def test_an_earlier_safe_action_cannot_approve_a_destructive_one() -> None:
+    """The exact exploit: `git status` first, `rm -rf` second, verdict was allow."""
+    rules = SafeCommandRules(
+        safe_prefixes=(("git", "status"),), denied_prefixes=(("rm", "-rf"),)
+    )
+
+    stream = local_review(
+        _guardian_request_with_history(
+            "git status --porcelain", "rm -rf .git && git init"
+        ),
+        rules,
+    )
+
+    assert json.loads(_verdict_text(list(stream or [])))["outcome"] == "deny"

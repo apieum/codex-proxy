@@ -94,8 +94,15 @@ def _response_id(body: JSONDict) -> str:
 
 
 def _planned_action(body: JSONDict) -> JSONDict | None:
+    """
+    The LAST marker is the action under review.
+
+    Codex resends past actions inside the transcript, so taking the first match
+    judged an old, usually benign entry: `git status` seen first was enough to
+    approve an `rm -rf` submitted later.
+    """
     texts = list(_input_texts(body))
-    for previous, current in pairwise(texts):
+    for previous, current in reversed(list(pairwise(texts))):
         if PLANNED_ACTION_MARKER in previous:
             return _parsed_object(current)
     return None
