@@ -189,11 +189,18 @@ it, Codex fails with `stream closed before response.completed` — a fatal
 error, not a silent degradation. Every other event is optional: the `delta`
 events only drive progressive display.
 
-**Hard rule 2: `usage` must carry all five `TokenUsage` fields** —
-`input_tokens`, `cached_input_tokens`, `output_tokens`,
-`reasoning_output_tokens`, `total_tokens`. They are not optional on the Codex
-side: a `"usage":{}` fails the deserialisation of the event, and therefore the
-whole stream, with
+**Hard rule 2: an empty `usage` object kills the stream.** Verified against
+`codex-rs/codex-api/src/sse/responses.rs`, `struct ResponseCompletedUsage`:
+
+| Field | Required |
+|---|---|
+| `input_tokens`, `output_tokens`, `total_tokens` | **yes** |
+| `input_tokens_details`, `output_tokens_details` | optional (they carry `cached_tokens` / `reasoning_tokens`) |
+| the `usage` object itself | optional -- `#[serde(default)] usage: Option<..>` |
+
+So omitting `usage` entirely is legal, while `"usage":{}` is not: present but
+missing the three required fields, it fails deserialisation of the event, and
+therefore the whole stream, with
 
 ```
 stream disconnected before completion: failed to parse ResponseCompleted:
@@ -201,9 +208,11 @@ missing field `input_tokens`
 ```
 
 Observed in production on 2026-07-30 (an earlier version of this section
-prescribed `"usage":{}`, which made every local verdict unusable). Field names
-were verified in the string table of the installed `codex` binary, not
-inferred.
+prescribed `"usage":{}`, which made every local verdict unusable). A later
+version claimed all five `TokenUsage` fields were required; reading the source
+showed only three are, and that `cached_input_tokens` /
+`reasoning_output_tokens` are not top-level fields at all. What the proxy
+emits is a valid superset.
 
 **Direct consequence for the local Guardian**: building a valid response takes
 only two events, the verdict being carried by the message item.
