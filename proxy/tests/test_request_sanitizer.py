@@ -84,3 +84,46 @@ def test_a_custom_tool_survives_because_litellm_converts_it() -> None:
     }
 
     assert "custom" in _tool_types(body)
+
+
+def _input_types(body: JSONDict) -> list[str]:
+    sanitised = sanitize_body(json.loads(json.dumps(body)))
+    assert isinstance(sanitised, dict)
+    items = sanitised["input"]
+    assert isinstance(items, list)
+    return [i["type"] for i in items if isinstance(i, dict) and isinstance(i["type"], str)]
+
+
+CUSTOM_PAIR: JSONDict = {
+    "input": [
+        {
+            "type": "custom_tool_call",
+            "call_id": "c1",
+            "name": "apply_patch",
+            "input": "*** Begin Patch",
+            "status": "completed",
+        },
+        {"type": "custom_tool_call_output", "call_id": "c1", "output": "done"},
+    ]
+}
+
+
+def test_a_custom_tool_output_is_not_dropped_as_an_orphan() -> None:
+    """
+    Cerebras 400s otherwise: "tool_call_ids did not have response messages".
+    The call was unrecognised while its output was, so the pair was broken.
+    """
+    assert "custom_tool_call_output" in _input_types(CUSTOM_PAIR)
+
+
+def test_a_custom_tool_call_keeps_its_output_adjacent() -> None:
+    assert _input_types(CUSTOM_PAIR) == ["custom_tool_call", "custom_tool_call_output"]
+
+
+def test_a_custom_call_without_its_output_is_dropped() -> None:
+    """An unanswered call is exactly what Cerebras refuses."""
+    orphan: JSONDict = {
+        "input": [{"type": "custom_tool_call", "call_id": "c9", "name": "apply_patch"}]
+    }
+
+    assert _input_types(orphan) == []

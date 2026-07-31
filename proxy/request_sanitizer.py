@@ -77,13 +77,17 @@ def _is_empty_assistant_message(item: JSONDict) -> bool:
 
 
 def _is_function_call(item: JSONDict) -> bool:
-    return item.get("type") == "function_call" or (
+    # `custom_tool_call` carries `input` where a function call carries
+    # `arguments`. Missing it left the call unrecognised while its output was
+    # not, so the pair broke and Cerebras refused the whole request with
+    # "tool_call_ids did not have response messages".
+    return item.get("type") in ("function_call", "custom_tool_call") or (
         "call_id" in item and "name" in item and "arguments" in item
     )
 
 
 def _is_function_call_output(item: JSONDict) -> bool:
-    return item.get("type") == "function_call_output" or (
+    return item.get("type") in ("function_call_output", "custom_tool_call_output") or (
         "call_id" in item and "output" in item
     )
 
