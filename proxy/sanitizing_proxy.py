@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import sys
+import uuid
 from collections.abc import AsyncGenerator, AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,6 +28,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 
 from proxy.approval_rules import SafeCommandRules
+from proxy.constrained_request import constrain_output
+from proxy.constrained_response import rewrite_constrained_response
 from proxy.credentials import RequiredCredentials
 from proxy.executable_lookup import console_script
 from proxy.guardian import GUARDIAN_MODEL, compact_review_request, local_review
@@ -127,6 +130,26 @@ def _unreachable_upstream(exc: httpx.TransportError) -> StreamingResponse:
     )
 
 
+def _constrained_answer(upstream: httpx.Response) -> StreamingResponse:
+    """Rebuilds the protocol Codex acts on from the schema-constrained text."""
+
+    async def rewritten() -> AsyncGenerator[bytes, None]:
+        chunks = [chunk async for chunk in upstream.aiter_raw()]
+        if DEBUG_ENABLED:
+            await asyncio.to_thread(
+                _append_debug_log,
+                "\n===== CONSTRAINED ANSWER (upstream) =====\n"
+                + b"".join(chunks).decode("utf-8", errors="replace")
+                + "\n",
+            )
+        for frame in rewrite_constrained_response(
+            chunks, response_id=f"resp_{uuid.uuid4().hex}", call_id=f"call_{uuid.uuid4().hex}"
+        ):
+            yield frame
+
+    return StreamingResponse(rewritten(), media_type="text/event-stream")
+
+
 def _append_debug_log(text: str) -> None:
     with open(DEBUG_LOG_PATH, "a") as f:
         f.write(text)
@@ -150,6 +173,7 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
     headers.pop("content-length", None)
 
     body = await request.body()
+    constrained = False
 
     if request.method == "POST" and path == "v1/responses" and body:
         try:
@@ -170,6 +194,14 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
 
             _debug_log("BEFORE sanitize_body", data)
             data = sanitize_body(data)
+
+            # Main traffic answers under a schema instead of calling tools
+            # natively: narrating an action stops being expressible.
+            if isinstance(data, dict) and data.get("model") != GUARDIAN_MODEL:
+                before = data
+                data = constrain_output(data)
+                constrained = data is not before
+
             _debug_log("AFTER sanitize_body", data)
             body = json.dumps(data).encode()
         except (ValueError, TypeError, KeyError) as exc:
@@ -186,6 +218,9 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
         upstream_response = await client.send(upstream_request, stream=True)
     except httpx.TransportError as exc:
         return _unreachable_upstream(exc)
+
+    if constrained:
+        return _constrained_answer(upstream_response)
 
     if DEBUG_ENABLED and path == "v1/responses":
         async def _tee_and_log() -> AsyncGenerator[bytes, None]:
