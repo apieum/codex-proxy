@@ -34,9 +34,20 @@ def _ignored(message: str) -> None:
     """Most tests do not care what is reported, only what is streamed."""
 
 
-def _rewritten(text: str, report: Callable[[str], None] = _ignored) -> list[JSONDict]:
+DECLARED = ("exec_command", "update_plan")
+
+
+def _rewritten(
+    text: str,
+    report: Callable[[str], None] = _ignored,
+    declared: tuple[str, ...] = DECLARED,
+) -> list[JSONDict]:
     chunks = rewrite_constrained_response(
-        _upstream(text), response_id="resp_1", call_id="call_1", report=report
+        _upstream(text),
+        response_id="resp_1",
+        call_id="call_1",
+        report=report,
+        declared_tools=declared,
     )
     events: list[JSONDict] = []
     for chunk in chunks:
@@ -134,7 +145,11 @@ def test_a_frame_split_across_network_chunks_loses_nothing() -> None:
 
     events = []
     for chunk in rewrite_constrained_response(
-        _split_every(whole, 13), response_id="r", call_id="c", report=_ignored
+        _split_every(whole, 13),
+        response_id="r",
+        call_id="c",
+        report=_ignored,
+        declared_tools=DECLARED,
     ):
         for line in chunk.split(b"\n\n"):
             if line.startswith(b"data: "):
@@ -149,7 +164,11 @@ def test_a_split_frame_still_carries_the_exact_command() -> None:
 
     events = []
     for chunk in rewrite_constrained_response(
-        _split_every(whole, 7), response_id="r", call_id="c", report=_ignored
+        _split_every(whole, 7),
+        response_id="r",
+        call_id="c",
+        report=_ignored,
+        declared_tools=DECLARED,
     ):
         for line in chunk.split(b"\n\n"):
             if line.startswith(b"data: "):
@@ -175,7 +194,11 @@ def _lossy_upstream(text: str) -> list[bytes]:
 def _from_lossy(text: str) -> list[JSONDict]:
     events: list[JSONDict] = []
     for chunk in rewrite_constrained_response(
-        _lossy_upstream(text), response_id="r", call_id="c", report=_ignored
+        _lossy_upstream(text),
+        response_id="r",
+        call_id="c",
+        report=_ignored,
+        declared_tools=DECLARED,
     ):
         for line in chunk.split(b"\n\n"):
             if line.startswith(b"data: "):
@@ -195,3 +218,28 @@ def test_the_completed_text_carries_the_exact_command() -> None:
     assert isinstance(arguments, str)
 
     assert json.loads(arguments) == {"cmd": "git status"}
+
+
+UNDECLARED_TURN = json.dumps(
+    {"kind": "tool_call", "tool": "apply_patch", "arguments": '{"cmd": "x"}'}
+)
+
+
+def test_an_undeclared_tool_never_becomes_a_call() -> None:
+    """Codex cannot run a tool it never declared, so the model retries forever."""
+    assert all(
+        item["type"] != "function_call" for item in _done_items(_rewritten(UNDECLARED_TURN))
+    )
+
+
+def test_an_undeclared_tool_is_reported() -> None:
+    """Observed: apply_patch was invented and the session looped on it."""
+    report = ReportSpy()
+
+    _rewritten(UNDECLARED_TURN, report)
+
+    assert "apply_patch" in report.messages[0]
+
+
+def test_a_declared_tool_is_still_executed() -> None:
+    assert _done_items(_rewritten(TOOL_TURN))[0]["type"] == "function_call"

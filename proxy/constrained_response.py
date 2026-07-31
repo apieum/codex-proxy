@@ -10,7 +10,7 @@ the user, never executed. Guessing a command out of prose is the one thing
 this must not do, since these calls are auto-approved before they run.
 """
 import json
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Collection, Iterable, Iterator
 
 from proxy.codex_sse import assistant_text_stream, function_call_stream
 from proxy.constrained_turn import deliver
@@ -23,16 +23,33 @@ TEXT_DONE = "response.output_text.done"
 class _RewrittenTurn:
     """Receives the turn's case and holds the stream that carries it to Codex."""
 
-    def __init__(self, response_id: str, call_id: str, report: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        response_id: str,
+        call_id: str,
+        report: Callable[[str], None],
+        declared_tools: Collection[str],
+    ) -> None:
         self._response_id = response_id
         self._call_id = call_id
         self._report = report
+        self._declared_tools = declared_tools
         self._stream: Iterator[bytes] = iter(())
 
     def message(self, text: str) -> None:
         self._stream = assistant_text_stream(text=text, response_id=self._response_id)
 
     def tool_call(self, name: str, arguments: JSONDict) -> None:
+        if name not in self._declared_tools:
+            # Codex cannot run a tool it never declared: the call vanishes, the
+            # state never changes, and the model retries the same turn forever.
+            self._report(
+                f"the model called {name!r}, which Codex never declared; shown "
+                "as a message, not executed"
+            )
+            self.message(json.dumps({"tool": name, "arguments": arguments}))
+            return
+
         self._stream = function_call_stream(
             name=name,
             arguments=arguments,
@@ -59,8 +76,9 @@ def rewrite_constrained_response(
     response_id: str,
     call_id: str,
     report: Callable[[str], None],
+    declared_tools: Collection[str],
 ) -> Iterator[bytes]:
-    turn = _RewrittenTurn(response_id, call_id, report)
+    turn = _RewrittenTurn(response_id, call_id, report, declared_tools)
     deliver(_answered_text(upstream), turn)
     return turn.frames()
 

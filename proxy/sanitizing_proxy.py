@@ -19,7 +19,7 @@ import os
 import shutil
 import sys
 import uuid
-from collections.abc import AsyncGenerator, AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator, Collection
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -130,7 +130,25 @@ def _unreachable_upstream(exc: httpx.TransportError) -> StreamingResponse:
     )
 
 
-def _constrained_answer(upstream: httpx.Response) -> StreamingResponse:
+def _declared_tool_names(body: JSONValue) -> frozenset[str]:
+    """What Codex can actually run: anything else would vanish and loop."""
+    if not isinstance(body, dict):
+        return frozenset()
+    tools = body.get("tools")
+    if not isinstance(tools, list):
+        return frozenset()
+    names = set()
+    for tool in tools:
+        if isinstance(tool, dict):
+            name = tool.get("name")
+            if isinstance(name, str):
+                names.add(name)
+    return frozenset(names)
+
+
+def _constrained_answer(
+    upstream: httpx.Response, declared_tools: Collection[str]
+) -> StreamingResponse:
     """Rebuilds the protocol Codex acts on from the schema-constrained text."""
 
     async def rewritten() -> AsyncGenerator[bytes, None]:
@@ -147,6 +165,7 @@ def _constrained_answer(upstream: httpx.Response) -> StreamingResponse:
             response_id=f"resp_{uuid.uuid4().hex}",
             call_id=f"call_{uuid.uuid4().hex}",
             report=_report,
+            declared_tools=declared_tools,
         ):
             yield frame
 
@@ -177,6 +196,7 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
 
     body = await request.body()
     constrained = False
+    declared_tools: Collection[str] = frozenset()
 
     if request.method == "POST" and path == "v1/responses" and body:
         try:
@@ -202,6 +222,7 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
             # natively: narrating an action stops being expressible.
             if isinstance(data, dict) and data.get("model") != GUARDIAN_MODEL:
                 before = data
+                declared_tools = _declared_tool_names(before)
                 data = constrain_output(data)
                 constrained = data is not before
 
@@ -223,7 +244,7 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
         return _unreachable_upstream(exc)
 
     if constrained:
-        return _constrained_answer(upstream_response)
+        return _constrained_answer(upstream_response, declared_tools)
 
     if DEBUG_ENABLED and path == "v1/responses":
         async def _tee_and_log() -> AsyncGenerator[bytes, None]:
