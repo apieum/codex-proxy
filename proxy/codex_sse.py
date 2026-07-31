@@ -36,12 +36,36 @@ def assistant_text_stream(text: str, response_id: str) -> Iterator[bytes]:
             },
         }
     )
+    yield _frame(_completed(response_id))
+
+
+def function_call_stream(
+    name: str, arguments: JSONDict, call_id: str, response_id: str
+) -> Iterator[bytes]:
+    """Carries a tool call Codex will execute and pair back through `call_id`."""
+    yield _frame({"type": "response.created", "response": {"id": response_id}})
     yield _frame(
         {
-            "type": "response.completed",
-            "response": {"id": response_id, "usage": NO_TOKENS_CONSUMED, "end_turn": True},
+            "type": "response.output_item.done",
+            "item": {
+                "type": "function_call",
+                "id": call_id,
+                "call_id": call_id,
+                "name": name,
+                "status": "completed",
+                # Codex parses this itself: a string, never a nested object.
+                "arguments": json.dumps(arguments),
+            },
         }
     )
+    yield _frame(_completed(response_id))
+
+
+def _completed(response_id: str) -> JSONDict:
+    return {
+        "type": "response.completed",
+        "response": {"id": response_id, "usage": NO_TOKENS_CONSUMED, "end_turn": True},
+    }
 
 
 def _frame(payload: JSONDict) -> bytes:
