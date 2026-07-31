@@ -23,6 +23,11 @@ SHELL_CONTROL_CHARACTERS = frozenset(";&|`$()<>\n\r")
 # prefix stays safe, the effect no longer is.
 FORCING_OPTIONS = frozenset({"--force", "-f"})
 
+# A prefix like `git add` promises a scoped action. These arguments break that
+# promise by sweeping in every modified file, which is how unrelated work ends
+# up inside a commit meant to be atomic.
+WHOLE_TREE_ARGUMENTS = frozenset({"-A", "--all", "."})
+
 
 class ApprovalOutcome(Protocol):
     def allow(self) -> None: ...
@@ -115,7 +120,15 @@ def _matching_prefix(
 
 
 def _stays_within_the_safe_prefix(shell_command: str, words: Sequence[str]) -> bool:
-    return not _chains_other_commands(shell_command) and not _forces_past_a_safeguard(words)
+    return (
+        not _chains_other_commands(shell_command)
+        and not _forces_past_a_safeguard(words)
+        and not _reaches_the_whole_tree(words)
+    )
+
+
+def _reaches_the_whole_tree(words: Sequence[str]) -> bool:
+    return bool(WHOLE_TREE_ARGUMENTS & set(words))
 
 
 def _chains_other_commands(shell_command: str) -> bool:

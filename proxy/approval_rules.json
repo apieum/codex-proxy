@@ -1,5 +1,5 @@
 {
-  "_comment": "Auto-approval pre-filter rules. The denylist always wins over the allowlist. Always escalated: shell chaining (; && || | ` $() < >) and forcing options (--force, -f). `git -C <dir>` is neutralised before matching (same command, different directory); `git -c <key>=<value>` is not, since it executes code.",
+  "_comment": "Auto-approval pre-filter rules. The denylist always wins over the allowlist. Always escalated: shell chaining (; && || | ` $() < >), forcing options (--force, -f) and whole-tree arguments (-A, --all, .) that widen a scoped prefix like `git add`. `git -C <dir>` is neutralised before matching (same command, different directory); `git -c <key>=<value>` is not, since it executes code.",
 
   "denied_prefixes": [
     ["rm", "-rf"],

@@ -185,3 +185,31 @@ def test_denied_prefix_wins_over_safe_prefix() -> None:
     ).evaluate(action, outcome)
 
     assert outcome.verdict == "deny"
+
+
+@pytest.mark.parametrize(
+    "shell_command",
+    ["git add -A", "git add --all", "git add .", "git -C sub add -A"],
+)
+def test_staging_everything_is_never_auto_approved(shell_command: str) -> None:
+    """
+    Observed: `git add -A` matched the `git add` prefix and swept unrelated
+    files into the commit. The prefix promises a scoped action; these flags
+    break that promise.
+    """
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", shell_command]}
+
+    SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
+
+    assert outcome.verdict != "allow"
+
+
+def test_staging_named_files_stays_allowed() -> None:
+    """The point is scope, not the command: explicit paths remain reviewable."""
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "git add config.py tests/x.py"]}
+
+    SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
+
+    assert outcome.verdict == "allow"
