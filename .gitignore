@@ -4,3 +4,4 @@ __pycache__/
 .tdd_phase
 .tdd_tests_snapshot
 proxy.zip
+/codex/
