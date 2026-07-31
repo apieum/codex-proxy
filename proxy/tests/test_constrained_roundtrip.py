@@ -43,6 +43,12 @@ def anyio_backend() -> str:
     return "asyncio"
 
 
+@pytest.fixture(autouse=True)
+def constrained(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests describe the constrained path, which is opt-in."""
+    monkeypatch.setattr(sanitizing_proxy, "CONSTRAIN_ENABLED", True)
+
+
 @pytest.fixture
 def relayed(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
     """Captures what actually reached the provider."""
@@ -115,3 +121,30 @@ async def test_each_call_gets_its_own_identifier(relayed: dict[str, object]) -> 
         raise AssertionError("no function_call in the answer")
 
     assert call_id(first.text) != call_id(second.text)
+
+
+@pytest.mark.anyio
+async def test_native_tool_calling_is_the_default(
+    relayed: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Constraining is a workaround; the native protocol is what Codex and the
+    provider agree on, so it stays the default and the workaround is opt-in.
+    """
+    monkeypatch.setattr(sanitizing_proxy, "CONSTRAIN_ENABLED", False)
+
+    await _post(dict(CODEX_REQUEST))
+
+    assert "tools" in relayed["body"]  # type: ignore[operator]
+
+
+@pytest.mark.anyio
+async def test_the_default_leaves_the_answer_untouched(
+    relayed: dict[str, object], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Without constraining, the provider's own stream reaches Codex as-is."""
+    monkeypatch.setattr(sanitizing_proxy, "CONSTRAIN_ENABLED", False)
+
+    response = await _post(dict(CODEX_REQUEST))
+
+    assert '"response.output_text.delta"' in response.text

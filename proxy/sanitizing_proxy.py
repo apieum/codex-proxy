@@ -44,6 +44,13 @@ BACKEND_CREDENTIALS = RequiredCredentials(("CEREBRAS_API_KEY",))
 DEBUG_LOG_PATH = "/tmp/codex_proxy_debug.log"
 DEBUG_ENABLED = os.environ.get("CODEX_PROXY_DEBUG", "").lower() in ("1", "true", "yes")
 
+# Constraining the output is a workaround for a model that narrates instead of
+# calling tools. The native protocol is what Codex and the provider already
+# agree on -- and it encodes tool arguments itself, where a constrained schema
+# makes the model serialise them by hand and it fails on large payloads.
+# Opt in with CODEX_PROXY_CONSTRAIN=1 to compare the two.
+CONSTRAIN_ENABLED = os.environ.get("CODEX_PROXY_CONSTRAIN", "").lower() in ("1", "true", "yes")
+
 client = httpx.AsyncClient(timeout=None)
 
 
@@ -220,7 +227,11 @@ async def proxy(path: str, request: Request) -> StreamingResponse:
 
             # Main traffic answers under a schema instead of calling tools
             # natively: narrating an action stops being expressible.
-            if isinstance(data, dict) and data.get("model") != GUARDIAN_MODEL:
+            if (
+                CONSTRAIN_ENABLED
+                and isinstance(data, dict)
+                and data.get("model") != GUARDIAN_MODEL
+            ):
                 before = data
                 declared_tools = _declared_tool_names(before)
                 data = constrain_output(data)

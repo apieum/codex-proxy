@@ -103,6 +103,18 @@ coexist and the `PATH` picks the wrong one:
 export LITELLM_EXECUTABLE="$HOME/.local/bin/litellm"
 ```
 
+## Constrained output (opt-in)
+
+By default the proxy relays Codex's native tool protocol untouched. Setting
+`CODEX_PROXY_CONSTRAIN=1` instead strips the tools, imposes a JSON schema on
+the answer, and rebuilds a `function_call` from it.
+
+That workaround exists for models that narrate an action rather than calling
+the tool. It has a cost: the schema carries `arguments` as a serialised
+string, so the model escapes them by hand and gets it wrong on large payloads
+such as a multi-line patch. Prefer the native path unless narration is
+actually the problem you are seeing.
+
 If LiteLLM cannot be started at all, the proxy says so and keeps running:
 requests then answer 502 naming the missing upstream, rather than the proxy
 exiting on you.
