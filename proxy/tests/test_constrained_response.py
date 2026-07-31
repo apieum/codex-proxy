@@ -157,3 +157,41 @@ def test_a_split_frame_still_carries_the_exact_command() -> None:
     items = [e["item"] for e in events if e["type"] == "response.output_item.done"]
 
     assert json.loads(items[0]["arguments"]) == {"cmd": "git status"}
+
+
+def _lossy_upstream(text: str) -> list[bytes]:
+    """Observed from Cerebras: deltas miss the opening, `done` carries it all."""
+    return [
+        b'data: {"type": "response.created", "response": {"id": "up_1"}}\n\n',
+        b"data: "
+        + json.dumps({"type": "response.output_text.delta", "delta": text[6:]}).encode()
+        + b"\n\n",
+        b"data: "
+        + json.dumps({"type": "response.output_text.done", "text": text}).encode()
+        + b"\n\n",
+    ]
+
+
+def _from_lossy(text: str) -> list[JSONDict]:
+    events: list[JSONDict] = []
+    for chunk in rewrite_constrained_response(
+        _lossy_upstream(text), response_id="r", call_id="c", report=_ignored
+    ):
+        for line in chunk.split(b"\n\n"):
+            if line.startswith(b"data: "):
+                payload = json.loads(line.removeprefix(b"data: "))
+                assert isinstance(payload, dict)
+                events.append(payload)
+    return _done_items(events)
+
+
+def test_incomplete_deltas_do_not_lose_the_turn() -> None:
+    """Measured in production: 3 turns in 26 arrived with the opening missing."""
+    assert _from_lossy(TOOL_TURN)[0]["type"] == "function_call"
+
+
+def test_the_completed_text_carries_the_exact_command() -> None:
+    arguments = _from_lossy(TOOL_TURN)[0]["arguments"]
+    assert isinstance(arguments, str)
+
+    assert json.loads(arguments) == {"cmd": "git status"}

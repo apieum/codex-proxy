@@ -17,6 +17,7 @@ from proxy.constrained_turn import deliver
 from proxy.json_types import JSONDict, JSONValue
 
 TEXT_DELTA = "response.output_text.delta"
+TEXT_DONE = "response.output_text.done"
 
 
 class _RewrittenTurn:
@@ -60,20 +61,35 @@ def rewrite_constrained_response(
     report: Callable[[str], None],
 ) -> Iterator[bytes]:
     turn = _RewrittenTurn(response_id, call_id, report)
-    deliver("".join(_text_deltas(upstream)), turn)
+    deliver(_answered_text(upstream), turn)
     return turn.frames()
 
 
-def _text_deltas(upstream: Iterable[bytes]) -> Iterator[str]:
+def _answered_text(upstream: Iterable[bytes]) -> str:
+    """
+    Prefer the completed text over the deltas.
+
+    Measured against Cerebras: 3 turns in 26 streamed deltas that were missing
+    the opening characters, while `output_text.done` carried the whole answer.
+    """
+    events = list(_events(upstream))
+    for event in reversed(events):
+        if event.get("type") == TEXT_DONE and isinstance(event.get("text"), str):
+            return str(event["text"])
+    return "".join(
+        str(e["delta"])
+        for e in events
+        if e.get("type") == TEXT_DELTA and isinstance(e.get("delta"), str)
+    )
+
+
+def _events(upstream: Iterable[bytes]) -> Iterator[JSONDict]:
     # Join first: network chunks land where TCP decides, so splitting each one
     # on its own drops any frame that straddles a boundary.
     for line in b"".join(upstream).split(b"\n\n"):
         event = _parsed_event(line)
-        if event is None or event.get("type") != TEXT_DELTA:
-            continue
-        delta = event.get("delta")
-        if isinstance(delta, str):
-            yield delta
+        if event is not None:
+            yield event
 
 
 def _parsed_event(line: bytes) -> JSONDict | None:
