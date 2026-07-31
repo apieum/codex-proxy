@@ -23,14 +23,20 @@ FORCED_REASONING_EFFORT = "medium"
 NON_STANDARD_TOOL_TYPES = {
     "namespace",
     "local_shell",
-    "custom",
     "computer_use",
     "code_interpreter",
     "file_search",
     "image_generation",
     "web_search_preview",
     "web_search",
+    # Cerebras rejects it outright: "tools.N.function: Field required".
+    "tool_search",
 }
+
+# `custom` is deliberately absent above: LiteLLM turns it into a proper
+# `function` tool, which is how `apply_patch` reaches the model at all.
+# Stripping it left Codex able to run a tool the model was never told about,
+# so the model kept inventing the call and the session looped.
 
 
 def _clean_tools(tools: JSONValue) -> JSONValue:

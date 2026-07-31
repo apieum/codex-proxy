@@ -52,3 +52,35 @@ def test_function_tools_are_carried_through_unchanged() -> None:
     assert isinstance(sanitised, dict)
 
     assert sanitised["tools"] == [tool]
+
+
+def test_the_tool_search_tool_is_stripped() -> None:
+    """Cerebras 400s on it: "tools.N.function: Field required"."""
+    body: JSONDict = {
+        "tools": [
+            {"type": "function", "name": "exec_command"},
+            {"type": "tool_search", "description": "…", "execution": {}, "parameters": {}},
+        ]
+    }
+
+    assert _tool_types(body) == ["function"]
+
+
+def test_a_custom_tool_survives_because_litellm_converts_it() -> None:
+    """
+    `apply_patch` arrives as a freeform `custom` tool. Stripping it left Codex
+    able to run the tool while the model was never told it existed.
+    """
+    body: JSONDict = {
+        "tools": [
+            {"type": "function", "name": "exec_command"},
+            {
+                "type": "custom",
+                "name": "apply_patch",
+                "description": "Edit files",
+                "format": {"type": "grammar", "syntax": "lark", "definition": "start: x"},
+            },
+        ]
+    }
+
+    assert "custom" in _tool_types(body)
