@@ -19,14 +19,21 @@ from proxy.json_types import JSONDict, JSONValue
 # command.
 SHELL_CONTROL_CHARACTERS = frozenset(";&|`$()<>\n\r")
 
-# Forcing means overriding a safeguard the command applies by default: the
-# prefix stays safe, the effect no longer is.
-FORCING_OPTIONS = frozenset({"--force", "-f"})
-
-# A prefix like `git add` promises a scoped action. These arguments break that
-# promise by sweeping in every modified file, which is how unrelated work ends
-# up inside a commit meant to be atomic.
-WHOLE_TREE_ARGUMENTS = frozenset({"-A", "--all", "."})
+# Arguments that break the promise a safe prefix makes. Defaults only: the
+# configuration owns this list, since which options matter is policy.
+#
+#   --force/-f  overrides a safeguard the command applies by default
+#   -A/--all/.  widens a scoped action to the whole tree
+#   --fix       makes a read-only check rewrite files (ruff, eslint, ...)
+DEFAULT_DISQUALIFYING_OPTIONS = (
+    "--force",
+    "-f",
+    "-A",
+    "--all",
+    ".",
+    "--fix",
+    "--unsafe-fixes",
+)
 
 
 class ApprovalOutcome(Protocol):
@@ -40,15 +47,18 @@ class SafeCommandRules:
         self,
         safe_prefixes: Sequence[Sequence[str]],
         denied_prefixes: Sequence[Sequence[str]] = (),
+        disqualifying_options: Sequence[str] = DEFAULT_DISQUALIFYING_OPTIONS,
     ) -> None:
         self._safe_prefixes = safe_prefixes
         self._denied_prefixes = denied_prefixes
+        self._disqualifying_options = frozenset(disqualifying_options)
 
     @classmethod
     def from_config(cls, config: JSONDict) -> Self:
         return cls(
             safe_prefixes=_configured_prefixes(config.get("safe_prefixes")),
             denied_prefixes=_configured_prefixes(config.get("denied_prefixes")),
+            disqualifying_options=_configured_options(config.get("disqualifying_options")),
         )
 
     def evaluate(self, action: JSONDict, outcome: ApprovalOutcome) -> None:
@@ -65,11 +75,16 @@ class SafeCommandRules:
         # Chaining disqualifies the fast approval path; it does not excuse us
         # from returning a verdict, so the decision goes to the model.
         safe = _matching_prefix(words, self._safe_prefixes)
-        if safe is not None and _stays_within_the_safe_prefix(shell_command, words):
+        if safe is not None and self._stays_within_the_safe_prefix(shell_command, words):
             outcome.allow()
             return
 
         outcome.escalate()
+
+    def _stays_within_the_safe_prefix(self, shell_command: str, words: Sequence[str]) -> bool:
+        return not _chains_other_commands(shell_command) and not (
+            self._disqualifying_options & set(words)
+        )
 
     def _shell_command(self, action: JSONDict) -> str:
         command = action.get("command")
@@ -97,6 +112,12 @@ def _without_git_working_directory(words: Sequence[str]) -> Sequence[str]:
     return ["git", *remaining]
 
 
+def _configured_options(value: JSONValue) -> Sequence[str]:
+    if not isinstance(value, list):
+        return DEFAULT_DISQUALIFYING_OPTIONS
+    return tuple(option for option in value if isinstance(option, str))
+
+
 def _configured_prefixes(value: JSONValue) -> tuple[tuple[str, ...], ...]:
     if not isinstance(value, list):
         return ()
@@ -119,21 +140,6 @@ def _matching_prefix(
     return None
 
 
-def _stays_within_the_safe_prefix(shell_command: str, words: Sequence[str]) -> bool:
-    return (
-        not _chains_other_commands(shell_command)
-        and not _forces_past_a_safeguard(words)
-        and not _reaches_the_whole_tree(words)
-    )
-
-
-def _reaches_the_whole_tree(words: Sequence[str]) -> bool:
-    return bool(WHOLE_TREE_ARGUMENTS & set(words))
-
-
 def _chains_other_commands(shell_command: str) -> bool:
     return bool(SHELL_CONTROL_CHARACTERS & set(shell_command))
 
-
-def _forces_past_a_safeguard(words: Sequence[str]) -> bool:
-    return bool(FORCING_OPTIONS & set(words))

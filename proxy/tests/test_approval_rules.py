@@ -213,3 +213,48 @@ def test_staging_named_files_stays_allowed() -> None:
     SafeCommandRules(safe_prefixes=(("git", "add"),)).evaluate(action, outcome)
 
     assert outcome.verdict == "allow"
+
+
+def test_a_writing_option_disqualifies_a_read_only_prefix() -> None:
+    """
+    Observed: `uv run ruff check .` is safe, `--fix --unsafe-fixes` rewrote 501
+    fixes across the whole repository under the same allowlisted prefix.
+    """
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "uv run ruff check . --fix"]}
+
+    SafeCommandRules(
+        safe_prefixes=(("uv", "run", "ruff"),),
+        disqualifying_options=("--fix",),
+    ).evaluate(action, outcome)
+
+    assert outcome.verdict != "allow"
+
+
+def test_the_same_prefix_without_the_option_stays_allowed() -> None:
+    outcome = OutcomeSpy()
+    action: JSONDict = {"command": ["/usr/bin/zsh", "-lc", "uv run ruff check ."]}
+
+    SafeCommandRules(
+        safe_prefixes=(("uv", "run", "ruff"),),
+        disqualifying_options=("--fix",),
+    ).evaluate(action, outcome)
+
+    assert outcome.verdict == "allow"
+
+
+def test_disqualifying_options_are_read_from_configuration() -> None:
+    """They are policy, not code: DIRECTION.md requires rules to be config."""
+    outcome = OutcomeSpy()
+    config: JSONDict = {
+        "safe_prefixes": [["uv", "run", "ruff"]],
+        "disqualifying_options": ["--unsafe-fixes"],
+    }
+    # No "." here: the whole-tree rule would escalate it for another reason.
+    action: JSONDict = {
+        "command": ["/usr/bin/zsh", "-lc", "uv run ruff check src --unsafe-fixes"]
+    }
+
+    SafeCommandRules.from_config(config).evaluate(action, outcome)
+
+    assert outcome.verdict == "escalate"

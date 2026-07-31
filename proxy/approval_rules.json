@@ -1,35 +1,107 @@
 {
-  "_comment": "Auto-approval pre-filter rules. The denylist always wins over the allowlist. Always escalated: shell chaining (; && || | ` $() < >), forcing options (--force, -f) and whole-tree arguments (-A, --all, .) that widen a scoped prefix like `git add`. `git -C <dir>` is neutralised before matching (same command, different directory); `git -c <key>=<value>` is not, since it executes code.",
-
+  "_comment": "Auto-approval pre-filter rules. The denylist always wins over the allowlist. Shell chaining (; && || | ` $() < >) always escalates. `disqualifying_options` lists arguments that break the promise a safe prefix makes: forcing past a safeguard (--force), widening a scoped action to the whole tree (-A, .), or making a read-only check rewrite files (--fix). `git -C <dir>` is neutralised before matching; `git -c <key>=<value>` is not, since it executes code.",
   "denied_prefixes": [
-    ["rm", "-rf"],
-    ["sudo"],
-    ["chmod", "777"],
-    ["mkfs"],
-    ["shutdown"],
-    ["reboot"]
+    [
+      "rm",
+      "-rf"
+    ],
+    [
+      "sudo"
+    ],
+    [
+      "chmod",
+      "777"
+    ],
+    [
+      "mkfs"
+    ],
+    [
+      "shutdown"
+    ],
+    [
+      "reboot"
+    ]
   ],
-
   "safe_prefixes": [
-    ["git", "status"],
-    ["git", "diff"],
-    ["git", "log"],
-    ["git", "show"],
-    ["git", "add"],
-    ["ls"],
-    ["pwd"],
-    ["cat"],
-    ["head"],
-    ["tail"],
-    ["wc"],
-    ["file"],
-    ["stat"],
-    ["which"],
-    ["grep"],
-    ["rg"],
-    ["find"],
-    ["uv", "run", "pytest"],
-    ["uv", "run", "ruff"],
-    ["uv", "run", "mypy"]
+    [
+      "git",
+      "status"
+    ],
+    [
+      "git",
+      "diff"
+    ],
+    [
+      "git",
+      "log"
+    ],
+    [
+      "git",
+      "show"
+    ],
+    [
+      "git",
+      "add"
+    ],
+    [
+      "ls"
+    ],
+    [
+      "pwd"
+    ],
+    [
+      "cat"
+    ],
+    [
+      "head"
+    ],
+    [
+      "tail"
+    ],
+    [
+      "wc"
+    ],
+    [
+      "file"
+    ],
+    [
+      "stat"
+    ],
+    [
+      "which"
+    ],
+    [
+      "grep"
+    ],
+    [
+      "rg"
+    ],
+    [
+      "find"
+    ],
+    [
+      "uv",
+      "run",
+      "pytest"
+    ],
+    [
+      "uv",
+      "run",
+      "ruff"
+    ],
+    [
+      "uv",
+      "run",
+      "mypy"
+    ]
+  ],
+  "disqualifying_options": [
+    "--force",
+    "-f",
+    "-A",
+    "--all",
+    ".",
+    "--fix",
+    "--unsafe-fixes"
   ]
 }
